@@ -18,8 +18,8 @@ footage. No third-party code beyond the components listed above.
 
 ## Rights and takedown
 
-If you believe something in this package infringes your rights, email
-the repository Issues with the specific file and reason (please put
+If you believe something in this package infringes your rights, open an issue in
+the repository Issues the repository with the specific file and reason (please put
 `[侵权申诉]` / "takedown" in the subject). Verified issues are removed or
 fixed promptly.
 
