@@ -1,9 +1,12 @@
 # KomaFlow
 
+[![Release](https://img.shields.io/github/v/release/YLKoKi/KomaFlow?label=download)](https://github.com/YLKoKi/KomaFlow/releases/latest)
+
+
 > **直接下载（Windows 程序包）** → <https://github.com/YLKoKi/KomaFlow/releases/latest>
 >
 > ⚠️ 请不要用绿色的 `Code → Download ZIP`：那是**源码**，里面没有 exe。
-> 程序包在 **Releases** 页面的 Assets 里（`KomaFlow_V1.1.0-beta.zip`，11.68 MB）。
+> 程序包在 **Releases** 页面的 Assets 里（`KomaFlow_V1.1.0-beta.zip`，12.20 MB）。
 
 
 > English: [README.en.md](README.en.md)
