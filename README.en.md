@@ -1,0 +1,126 @@
+# KomaFlow
+
+Turn MMD models (`.pmx`) and motions (`.vmd`) into a finished video — by driving
+the **Blender you already have installed**. The app assembles the scene, builds
+and bakes physics, renders in segments, then muxes the result with FFmpeg.
+
+Windows desktop app (not a Blender add-on). **V1.1.0-beta**.
+
+> 中文说明见 [README.md](README.md)。界面默认中文，可安装
+> `language-pack-en` 切换为英文（见 [English-UI-Guide](#english-ui)）。
+
+## What it does
+
+| Step | Detail |
+|---|---|
+| Assemble | Import PMX / append a `.blend` stage / attach VMD motion and camera |
+| Physics | `mmd_tools` `build_rig` (bone-follow constraints) + point-cache bake |
+| Preroll | 30 still frames so hair and skirt settle before the motion starts |
+| Render | Segmented (~1000 frames per segment), resumable |
+| Encode | External FFmpeg; transparent output goes PNG → alpha MOV |
+
+## Requirements
+
+| Need | Notes |
+|---|---|
+| **Windows 10 / 11 (64-bit)** | Windows only |
+| **Blender 5.0 – 5.99** | Tested on 5.2.3 LTS. **Not bundled** — use your own install |
+| **mmd_tools add-on** | `bl_ext.blender_org.mmd_tools`; one-click install from the UI |
+| **FFmpeg** | Install it and keep `ffmpeg.exe` on `PATH`. **Not bundled** |
+| Python 3.10+ | Only for running from source. **No pip dependencies** |
+
+## Quick start
+
+**Release build**
+
+1. Download `KomaFlow_V1.1.0-beta.zip` from Releases and extract it
+2. Run `KomaFlow.exe`
+3. Drop a `.pmx` into Character, a `.vmd` into Motion, click Start Render
+
+**From source**
+
+```bat
+python run.py
+```
+
+Read `User-Guide-EN.txt` (inside the release package) for the full walkthrough.
+
+## Design notes
+
+- **Blender and FFmpeg are not bundled** — both are called as separate processes,
+  so no GPL code is distributed here.
+- **No assets are bundled** — no models, motions, textures or footage.
+- **Zero runtime dependencies** — standard library + Tk only.
+- **The project is reusable** — assembly saves `<name>.blend` next to your output,
+  with physics already baked. Re-render, change the range, or edit it in Blender
+  and render again without re-baking.
+- **One network touch point** — the "install mmd_tools" action lets Blender fetch
+  the add-on from the official repository. Nothing else goes online.
+- **No telemetry**, no accounts, no registry writes, no services.
+
+## Layout
+
+```
+src/komaflow/            application
+  core/                  pure logic (no bpy / tk)
+  adapters/              Blender and FFmpeg drivers
+  adapters/vendor/       MMD still renderer (MIT, see LICENSE / NOTICE)
+  ui/                    Tk interface
+tests/                   279 unit tests
+tools/                   PyInstaller spec, packaging, asset generators
+docs/                    architecture and usage notes (Chinese)
+```
+
+```bat
+set PYTHONPATH=src
+python -m unittest discover -s tests -t .
+```
+
+## English UI
+
+The interface is Chinese by default. An optional English language pack ships in
+the release package:
+
+1. Download/extract `KomaFlow_V1.1.0-beta.zip`
+2. Copy `language-pack-en/locales` next to `KomaFlow.exe`
+3. Restart — the UI is English
+
+Remove the folder to return to Chinese. Details: `English-UI-Guide.txt`.
+
+## Known limitations
+
+- The executable is **unsigned** (SmartScreen will warn on first run)
+- No CI yet; tests require Tk and have only been run on Windows
+- Physics is an approximation: `build_rig` uses distance constraints instead of
+  MMD's soft constraints, so some models may clip or jitter
+- Verified only on Blender 5.x with mmd_tools 4.5.x
+
+## Assets and licensing
+
+This project contains **no** models, motions, textures or rendered footage, and
+grants **no** rights to any third-party asset. MMD models and motions belong to
+their authors; common terms are "no redistribution" and "no commercial use".
+
+## How the code was produced
+
+Written with **AI assistance**, reviewed and tested by a human. Apart from the
+MIT renderer under `adapters/vendor/` (attributed), no third-party code was
+copied.
+
+## License
+
+- This project: **MIT** (see [LICENSE](LICENSE))
+- `adapters/vendor/MMD渲染.py`: **MIT**, copyright its author
+- Blender / mmd_tools: **GPL**, not bundled — invoked as subprocesses only
+
+Full component list: [THIRD-PARTY-NOTICES-EN.md](THIRD-PARTY-NOTICES-EN.md)
+(Chinese: 第三方来源与许可_发布版.md).
+
+## Contact
+
+| Channel | Use for |
+|---|---|
+| **GitHub Issues** | Questions, bug reports, feature requests |
+| **Issues (label 【侵权申诉】)** | Copyright / privacy / business — include the exact file and reason |
+
+Please do **not** open a public issue for copyright or privacy matters.

@@ -1,0 +1,111 @@
+KomaFlow — How to switch the UI to English
+==========================================
+
+The interface is Chinese by default. An English language pack is included
+in this folder. Installing it takes about a minute. Nothing else changes:
+your projects, settings and renders are untouched.
+
+You can switch back to Chinese at any time.
+
+
+1. Method A (recommended): move the patch up one level
+------------------------------------------------------
+1. Open this folder. You will see a subfolder named  language-pack-en
+   ("English language pack").
+2. Inside it there is a folder named  locales  (containing en.json).
+3. Cut that whole  locales  folder and paste it next to KomaFlow.exe.
+4. The result must look like this:
+
+       KomaFlow_V1.1.0-beta\          <- program folder
+         KomaFlow.exe
+         _internal\
+         locales\                     <- must sit at this level
+           en.json
+         language-pack-en\                  <- leftovers, safe to delete
+
+5. Double-click KomaFlow.exe. The UI is now in English.
+
+
+2. Method B: leave the program folder untouched
+-----------------------------------------------
+1. Press Win + R, type:  %APPDATA%\KomaFlow   and press Enter
+   (create a folder named KomaFlow if it does not exist)
+2. Create a folder named  locales  inside it.
+3. Put en.json there, so the final path is:
+
+       %APPDATA%\KomaFlow\locales\en.json
+
+4. Restart the program. The UI is now in English.
+
+
+3. Switching back to Chinese
+----------------------------
+Delete the  locales  folder (or just en.json) and restart the program.
+Works for both methods. No project or setting is affected.
+
+
+4. Not working? Check in this order
+-----------------------------------
+[ ] The file must be named exactly  en.json  (not en.json.txt —
+    Notepad often adds .txt)
+[ ] It must be inside a folder named  locales , and that folder must be
+    next to KomaFlow.exe
+[ ] The program must be restarted; an already-open window will not change
+[ ] en.json must be UTF-8 and contain pairs like  {"中文": "English"}
+
+
+5. Adding your own translations
+-------------------------------
+Open locales\en.json in Notepad and add a line following the existing ones:
+
+    "开始渲染": "Start Render",
+
+Notes:
+  · every line ends with a comma except the last one
+  · use straight double quotes " , not curly quotes “ ”
+  · restart the program after editing
+  · a wrong translation cannot break the program; that line simply stays
+    in Chinese
+
+
+6. Coverage (honest note)
+-------------------------
+The main window is translated: the four asset cards, the parameter panel,
+buttons, status bar and the onboarding card. Some long sentences, dialog
+details and runtime log lines are still in Chinese. This does not affect
+usage — you can add the missing ones yourself as described above.
+
+
+==========================================================================
+中文说明（给中文用户：怎么把界面换成英文）
+==========================================================================
+
+默认是中文界面。本目录里已经放好了英文补丁，不用另外下载。
+
+方法一（推荐）：
+  1. 打开本目录，会看到「language-pack-en」文件夹
+  2. 进去，里面是 locales 文件夹（含 en.json）
+  3. 把整个 locales 文件夹剪切到 KomaFlow.exe 旁边
+  4. 最终结构：
+         KomaFlow_V1.1.0-beta\
+           KomaFlow.exe
+           _internal\
+           locales\          <- 要它在这一层
+             en.json
+  5. 重开程序，界面变英文
+
+方法二（不动程序目录）：
+  按 Win + R 输入 %APPDATA%\KomaFlow → 新建 locales 文件夹
+  → 把 en.json 放进去 → 重开程序
+
+改回中文：删掉 locales 文件夹（或 en.json），重开程序即可。
+
+没生效？检查：文件名必须是 en.json（不是 en.json.txt）、必须放在
+locales 里且与 KomaFlow.exe 同级、改完要重开程序、编码要 UTF-8。
+
+想补翻译：用记事本打开 locales\en.json，照已有行加一条
+    "开始渲染": "Start Render",
+注意末尾逗号（最后一行除外），必须用英文双引号。翻译错了不会弄坏程序。
+
+覆盖范围：主界面（四张卡、参数、按钮、状态栏、引导）已翻译；
+部分长句、弹窗细则与运行日志仍是中文。

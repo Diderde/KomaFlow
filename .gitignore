@@ -1,0 +1,50 @@
+# ── 构建产物（E-5.4：不提交构建产物）──
+build/
+dist/
+#: 打包用的"素版"源码（剥掉注释/docstring 之后喂给 PyInstaller 的那份）。
+#: 它是 dist 的中间产物，随时可重建，不入库。
+.build_stage/
+#: PyInstaller 自动生成的 spec 不入库；但 `tools/KomaFlow.spec` 是**手写的**
+#: （里面写了要带哪些数据、排除哪些隐私文件），属于源文件，要入库。
+*.spec
+!tools/KomaFlow.spec
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ── 运行产物 / 工作目录 ──
+work/
+output/
+*.log
+progress.json
+
+# ── 用户素材与工程：合规红线，绝不入库 ──
+#    依据：L-4.1~L-4.7「软件零内置素材」+ L-4.5「测试素材不得进入仓库」
+*.pmx
+*.pmd
+*.vmd
+*.vpd
+*.blend
+*.blend1
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.mp4
+*.mov
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tga
+*.tif
+*.webp
+*.zip
+*.rar
+
+# 如需在文档中引用配图，请用白名单放行（配图必须原创或可商用，L-2.4）：
+# !docs/assets/*.png
+
+# ── UI 自绘资源必须入库（原创美术：LOGO / 吉祥物 / 窗口按钮，非 MMD 素材）──
+!src/komaflow/ui/assets/*.png
+!src/komaflow/ui/assets/*.ico

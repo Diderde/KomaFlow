@@ -1,0 +1,122 @@
+KomaFlow V1.1.0-beta — User Guide (English)
+===========================================
+
+What it is
+----------
+A Windows desktop app that turns MMD assets (.pmx models, .vmd motions) into a
+finished video. It does not render by itself: it drives the Blender you already
+installed, and merges the frames with FFmpeg.
+
+Pipeline: assemble -> 30-frame physics preroll -> segmented render -> encode.
+
+
+Before you start
+----------------
+1. Blender 5.x (required). Not bundled — use your own install.
+   Download: https://www.blender.org/download/
+2. FFmpeg (required for encoding). Not bundled either. Install it and make sure
+   ffmpeg.exe is on PATH, or point to it with the KomaFlow_FFMPEG setting.
+3. mmd_tools add-on (required). In Blender: Edit > Preferences > Get Extensions,
+   search "MMD Tools", install. Without it .pmx / .vmd cannot be read.
+
+
+How to use
+----------
+Double-click KomaFlow.exe. On first launch it looks for Blender:
+  - one found      -> used directly
+  - several found  -> you pick one, and it is remembered
+  - none found     -> it tells you where to download it
+
+Then drag your files into the four cards:
+  - Character : .pmx / .pmd / or a .blend project you prepared
+  - Motion    : .vmd (several allowed; expression VMDs go here too)
+  - Camera    : .vmd (optional; leave empty for an auto front camera)
+  - Stage     : .pmx / .pmd / .blend (optional)
+
+Buttons:
+  - Preview     : render one frame to check framing (assembles first)
+  - Model view  : render three orthographic views of a .pmx (no video)
+  - Start Render: run the whole pipeline and produce the video
+
+
+Defaults you should know
+------------------------
+  - Render background: OFF by default (transparent output). It switches ON
+    automatically once you add a stage/background.
+  - Physics: always on. Import -> build_rig -> bake, fully automatic.
+    There is no physics switch in the UI.
+  - Look: taken from the capability pack (the project saved by "Model view").
+  - Preroll: 30 frames of stillness so hair/skirt settle before the motion starts.
+  - Segments: about 1000 frames each; finished segments are never re-rendered.
+
+
+Assembly happens once
+---------------------
+When you click Preview or Start Render and nothing has been assembled yet:
+
+    import assets -> build_rig -> bake -> save project (.blend)
+
+The project is saved next to your output as <name>.blend (physics already baked).
+
+After that:
+  - changing the render range / resolution, or restarting the app, reuses that
+    project and does NOT re-bake physics
+  - if you edit that .blend (materials, lights, camera), the next render uses
+    your edited version
+  - changing model / motion / stage / preroll triggers a re-assembly and
+    overwrites the project (the log tells you so)
+
+
+Where files go
+--------------
+By default: Documents\KomaFlow (changeable in settings).
+  - video   : <output folder>\<name>.mp4 (plus .mov when transparent)
+  - project : <output folder>\<name>.blend
+  - logs    : <work folder>\logs\KomaFlow.log, build.log, render_seg*.log
+
+
+Troubleshooting
+---------------
+Blender not found
+  Make sure you installed the actual blender.exe (not a shortcut). The app scans
+  all drives, the registry, Steam libraries, Desktop and Downloads; if it still
+  fails, point it manually with "Select path...".
+
+mmd_tools missing
+  The app warns you; you can trigger the install from settings (Blender downloads
+  it from the official extension repository).
+
+No physics (hair/skirt not moving)
+  - If you supplied a .blend that has no rigid bodies, switch to .pmx or run
+    "Model view" once to produce a rigged project.
+  - The log states how many bone-follow constraints were built and which frames
+    were baked.
+
+Camera looks buried / too low
+  Usually a unit mismatch in the camera VMD (exported without the 1/0.08 factor).
+  The log warns: "camera lowest X m, character feet Y m".
+
+No alpha channel in the output
+  Check that Render background is OFF; with a stage present transparency is
+  ignored on purpose (the log says so).
+
+Encoding fails
+  FFmpeg is missing or not on PATH. Rendering finishes, but merging/encoding fails.
+
+
+Assets and licensing
+--------------------
+This tool ships no models, motions, stages, music or images, and grants no rights
+to any asset. MMD models and motions belong to their authors; common terms are
+"no redistribution" and "no commercial use". Read the original author's terms
+before use.
+
+The bundled renderer (adapters/vendor) is MIT; see LICENSE_MMD渲染.txt.
+Blender and mmd_tools are GPL and are not bundled — they are called as separate
+processes.
+
+
+English UI
+----------
+The interface is Chinese by default. An English language pack is included in
+this package: see English-UI-Guide.txt.
