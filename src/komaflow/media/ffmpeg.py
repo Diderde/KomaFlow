@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -65,6 +66,36 @@ def _resolve(name: str, explicit: str | Path | None = None) -> Path:
     found = shutil.which(name)
     if found:
         return Path(found)
+
+    # 常见安装位置：WinGet / Scoop / Chocolatey / Program Files / 程序自带
+    suffix = ".exe" if os.name == "nt" else ""
+    exe_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[3]
+    guesses: list[Path] = [
+        exe_dir / f"{name}{suffix}",
+        exe_dir / "ffmpeg" / f"{name}{suffix}",
+        exe_dir / "ffmpeg" / "bin" / f"{name}{suffix}",
+    ]
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        guesses.append(Path(local) / "Microsoft" / "WinGet" / "Links" / f"{name}{suffix}")
+        winget_pkgs = Path(local) / "Microsoft" / "WinGet" / "Packages"
+        if winget_pkgs.is_dir():
+            for pkg in winget_pkgs.glob("Gyan.FFmpeg*"):
+                guesses.extend(pkg.glob(f"**/bin/{name}{suffix}"))
+    for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"),
+                 os.environ.get("ProgramData")):
+        if base:
+            guesses.append(Path(base) / "ffmpeg" / "bin" / f"{name}{suffix}")
+            guesses.append(Path(base) / "chocolatey" / "bin" / f"{name}{suffix}")
+    home = os.environ.get("USERPROFILE")
+    if home:
+        guesses.append(Path(home) / "scoop" / "shims" / f"{name}{suffix}")
+    for guess in guesses:
+        try:
+            if guess.is_file():
+                return guess
+        except OSError:
+            continue
 
     raise KomaFlowError(
         ErrorKind.ASSET_CORRUPT,

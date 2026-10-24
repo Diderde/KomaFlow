@@ -487,13 +487,21 @@ def run_project(
         # ── 输出形态：透明走 PNG 序列（RGBA），否则就是普通的 MP4 ──
         transparent = project.effective_transparent()
         alpha_codec = project.alpha_codec_name()
+        # 🚨 「PNG 图片序列」≠「透明」：
+        #    透明说的是**要不要 alpha**，PNG 说的是**要不要视频文件**。
+        #    以前只用一个 transparent 判断，于是"有舞台 + 选 PNG"就被当成
+        #    MP4 去校验 → 回头找 ffmpeg 读产物 → 报"产物读不出来"。
+        frames_only = transparent or alpha_codec == "png"
+        if frames_only and not transparent:
+            _emit(on_event, "log", level="info",
+                  message="输出格式：PNG 图片序列（只出图，不编码视频，不需要 FFmpeg）")
         if transparent:
             # ⚠️ 只说"出一条"，不再提"另外垫一条 MP4" —— 那条已去掉，
             # 用户选什么就出什么（用户要求，见 _encode_png_tracks 的说明）。
             _emit(on_event, "log", level="info",
                   message=("透明背景：分段产物改为 PNG 序列（RGBA），"
                            f"成片是「{alpha_codec}」的 MOV"))
-        ext = "png" if transparent else "mp4"
+        ext = "png" if frames_only else "mp4"
 
         # ── ②a 物理执行情况（写进日志，别让用户只能猜）──
         #
@@ -540,7 +548,7 @@ def run_project(
             return probe_video(path, ffmpeg)
 
         plan = plan_run(total_frames, work_dir, limit=params.segment_limit,
-                        ext=ext, prober=None if transparent else prober,
+                        ext=ext, prober=None if frames_only else prober,
                         first_frame=params.frame_start)
         result.segments_total = len(plan.segments)
         result.segments_skipped = len(plan.completed)
@@ -571,7 +579,7 @@ def run_project(
                 target=target, params=params, work_dir=work_dir, index=index,
                 total=len(plan.segments), done_before=done_before, total_frames=total_frames,
                 ffmpeg=ffmpeg, on_event=on_event, cancel=cancel, control=control,
-                transparent=transparent,
+                transparent=frames_only,
             )
             rendered_parts.append(target)
             rendered_frames += segment.count
@@ -584,7 +592,22 @@ def run_project(
         output_dir.mkdir(parents=True, exist_ok=True)
         final_mov: Path | None = None
 
-        if transparent:
+        if frames_only and alpha_codec == "png":
+            # 只出图片序列：不调 FFmpeg，把各段的帧按顺序导出成一个文件夹
+            _emit(on_event, "stage", stage="concat", message="正在整理 PNG 序列")
+            final, exported = _export_png_frames(
+                segments=[item.segment for item in plan.segments],
+                work_dir=work_dir, output_dir=output_dir,
+                basename=project.output.basename, on_event=on_event,
+            )
+            result.output = final
+            result.alpha_output = None
+            result.ok = True
+            _emit(on_event, "done", output=str(final), frames=exported,
+                  duration=0.0, alpha_output="")
+            return
+
+        if frames_only:
             # 要编码的段清单：渲过的 + 判为已完成跳过的，都在 ``plan.segments`` 里。
             # ⚠️ 给的是**段**（不是目录）—— 目录与前缀由 png_frames_of 算，
             # 上一版就是因为它俩各算一套才对不上（见 _encode_png_tracks）。
@@ -622,6 +645,9 @@ def run_project(
         # 用户从第 800 帧开始渲时，工程总帧数仍是整片长度，但成片只有后半段。
         # 所以改成跟"本次实际产出的帧数"比。
         _emit(on_event, "stage", stage="verify_final", message=STAGES[4][1])
+        if frames_only and alpha_codec == "png":
+            # 上面 _export_png_frames 已按张数核对过，这里不再 probe
+            return
         info_final = probe_video(final, ffmpeg)
         if info_final.frame_count != rendered_frames:
             raise KomaFlowError(
@@ -844,6 +870,24 @@ def _prepare_and_assemble(
         raise KomaFlowError(ErrorKind.MMD_TOOLS_MISSING)
 
     params = project.params
+
+    # 🚨 FFmpeg 预检：视频输出要靠它拼接与校验。
+    #    以前不查，等渲了几百帧、走到"读产物"才炸，用户白等几十分钟
+    #    （用户那边真机报过：586/1000 帧才弹"找不到 ffmpeg"）。
+    #    只要图片序列就不需要 FFmpeg，所以先算清输出形态再决定查不查。
+    needs_ffmpeg = project.effective_transparent() is False and \
+        project.alpha_codec_name() != "png"
+    if needs_ffmpeg:
+        try:
+            from ..media.ffmpeg import find_ffmpeg
+            find_ffmpeg()
+        except KomaFlowError as exc:
+            raise KomaFlowError(
+                ErrorKind.ASSET_CORRUPT,
+                detail=(exc.detail or "找不到 FFmpeg")
+                + "｜若你只需要图片序列，把输出格式改成「PNG 图片序列」就不需要 FFmpeg。",
+            ) from exc
+
     work_blend = work_dir / "work.blend"
     build_report_path = work_dir / "build_report.json"
     build_spec = {
@@ -1403,6 +1447,41 @@ def unique_output_path(target: Path) -> Path:
             return candidate
     stamp = time.strftime("%Y%m%d_%H%M%S")
     return target.with_name(f"{stem}_{stamp}{suffix}")
+
+
+def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
+                       basename: str, on_event=None) -> tuple[Path, int]:
+    """把各段的 PNG 帧按顺序导出到 `<输出目录>/<成片名>_frames/`。
+
+    PNG 序列模式下分段产物散在 ``segments/`` 里，用户要的是一个能直接用的
+    文件夹。导出时**连续重新编号**（第 2 段不会从 0 重新数），并核对总张数。
+    """
+    target_dir = output_dir / f"{basename}_frames"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for stale in target_dir.glob("*.png"):
+        stale.unlink()
+
+    index = 0
+    for order, segment in enumerate(segments):
+        frames = png_frames_of(work_dir, segment)
+        files = sorted(list_png_frames(frames.directory, frames.prefix))
+        if not files:
+            raise KomaFlowError(
+                ErrorKind.ASSET_CORRUPT,
+                detail=f"第 {order + 1} 段没有 PNG 帧：{frames.describe()}",
+            )
+        for source in files:
+            (target_dir / f"{basename}_{index:04d}.png").write_bytes(source.read_bytes())
+            index += 1
+        if on_event is not None:
+            _emit(on_event, "progress", segment=order,
+                  segment_total=len(segments), frame_done=index,
+                  frame_total=index,
+                  percent=99.0 if order + 1 == len(segments) else 90.0,
+                  encoding=True, message=f"正在导出第 {order + 1} 段")
+    if index == 0:
+        raise KomaFlowError(ErrorKind.ASSET_CORRUPT, detail="一张 PNG 都没导出")
+    return target_dir, index
 
 
 def _encode_png_tracks(
