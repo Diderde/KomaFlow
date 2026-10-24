@@ -1,5 +1,11 @@
 # KomaFlow
 
+> **直接下载（Windows 程序包）** → <https://github.com/YLKoKi/KomaFlow/releases/latest>
+>
+> ⚠️ 请不要用绿色的 `Code → Download ZIP`：那是**源码**，里面没有 exe。
+> 程序包在 **Releases** 页面的 Assets 里（`KomaFlow_V1.1.0-beta.zip`，11.68 MB）。
+
+
 > English: [README.en.md](README.en.md)
 
 把 MMD 的**模型（.pmx）**和**动作（.vmd）**拖进来，调用你电脑上已装的 Blender

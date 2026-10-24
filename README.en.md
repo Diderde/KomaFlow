@@ -1,5 +1,12 @@
 # KomaFlow
 
+> **Download the app (Windows)** → <https://github.com/YLKoKi/KomaFlow/releases/latest>
+>
+> Do not use the green `Code → Download ZIP` button — that is the **source code**
+> and contains no executable. The app is the asset on the **Releases** page
+> (`KomaFlow_V1.1.0-beta.zip`, 11.68 MB).
+
+
 Turn MMD models (`.pmx`) and motions (`.vmd`) into a finished video — by driving
 the **Blender you already have installed**. The app assembles the scene, builds
 and bakes physics, renders in segments, then muxes the result with FFmpeg.
@@ -26,7 +33,7 @@ Windows desktop app (not a Blender add-on). **V1.1.0-beta**.
 | **Windows 10 / 11 (64-bit)** | Windows only |
 | **Blender 5.0 – 5.99** | Tested on 5.2.3 LTS. **Not bundled** — use your own install |
 | **mmd_tools add-on** | `bl_ext.blender_org.mmd_tools`; one-click install from the UI |
-| **FFmpeg** | Install it and keep `ffmpeg.exe` on `PATH`. **Not bundled** |
+| **FFmpeg** | Needed for muxing/encoding. **The app offers to download it on first launch** (~90 MB).<br>Not required for single-pass **MP4** or **PNG sequence**; **required for transparent MOV** |
 | Python 3.10+ | Only for running from source. **No pip dependencies** |
 
 ## Quick start

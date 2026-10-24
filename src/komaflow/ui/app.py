@@ -1258,15 +1258,79 @@ class KomaFlowApp:
             text = "还看不出要占多少。先在「参数」里把清晰度和时长填完，再回来选。"
         messagebox.showinfo(f"选了「{budget.CODEC_LABELS.get(codec, codec)}」", text)
 
-    def _env_summary(self) -> str:
-        """环境面板收起时显示什么 —— 一句话说清"能不能开工"。
+    # ── 首次运行：把外部依赖一次准备好 ───────────────────────────────
+    def _ffmpeg_missing(self) -> bool:
+        try:
+            from komaflow.media.ffmpeg import find_ffmpeg
+            find_ffmpeg()
+            return False
+        except Exception:      # noqa: BLE001
+            return True
 
-        **不写版本号**。用户不关心 5.2.2 还是 5.3.0，他关心"能不能用"。
-        完整的选台界面在设置窗口里，这里只报结论 —— 逻辑统一在
-        ``env_picker.summary_of``，别在这边另写一套（会写歪）。
-        """
+    def _env_summary(self) -> str:
+        """环境面板收起时显示什么 —— 一句话说清"能不能开工"。"""
         probed = getattr(self, "_blender_probed", [])
-        return env_picker.summary_of(probed, self.vars["blender"].get())
+        base = env_picker.summary_of(probed, self.vars["blender"].get())
+        base += " · FFmpeg " + ("✗" if self._ffmpeg_missing() else "✓")
+        return base
+
+    def _first_run_setup(self) -> None:
+        """第一次打开就检查外部依赖。
+
+        只处理**能自动解决**的那一项：FFmpeg（拼视频/编码要用）。
+        Blender 与 mmd_tools 必须用户自己装，这里只提示，不代劳。
+        处理完写 ``settings.ffmpeg_setup_done``，以后不再弹。
+        """
+        if getattr(self.settings, "ffmpeg_setup_done", False):
+            return
+        if not self._ffmpeg_missing():
+            self.settings.ffmpeg_setup_done = True
+            self._save_settings_quietly()
+            return
+
+        answer = messagebox.askyesno(
+            "首次使用：准备 FFmpeg",
+            "要把渲染结果拼成视频（MP4 / MOV），需要一个叫 FFmpeg 的小工具。\n"
+            "它不随本软件分发，我可以现在替你下载（约 90 MB，来自官方构建站）。\n\n"
+            "选「否」也能用：输出格式里选「PNG 图片序列」就不需要它。\n"
+            "以后想装：重新打开程序会自动再问，或去设置里手动下载。",
+        )
+        self.settings.ffmpeg_setup_done = True
+        self._save_settings_quietly()
+        if not answer:
+            self._log("已跳过 FFmpeg 下载（PNG 图片序列不需要它）")
+            return
+        self._download_ffmpeg_async()
+
+    def _save_settings_quietly(self) -> None:
+        try:
+            self.settings.save()
+        except Exception:      # noqa: BLE001
+            pass
+
+    def _download_ffmpeg_async(self) -> None:
+        from komaflow.media import ffmpeg_fetch
+        from komaflow.media.ffmpeg import ENV_FFMPEG
+        import threading as _th
+
+        self._log("正在下载 FFmpeg（约 90 MB）…")
+
+        def job() -> None:
+            def progress(url: str, done: int, total: int) -> None:
+                pct = int(done / total * 100) if total else 0
+                self.root.after(0, self._log,
+                                f"  FFmpeg {pct}%  ({done // 1048576}/"
+                                f"{max(total, 1) // 1048576} MB)")
+            try:
+                target = ffmpeg_fetch.fetch(on_progress=progress, on_note=self._log)
+                os.environ[ENV_FFMPEG] = str(target)
+                self.root.after(0, self._log, f"FFmpeg 已就绪：{target}")
+                self.root.after(0, self._refresh_panels)
+            except Exception as exc:      # noqa: BLE001
+                self.root.after(0, self._log, f"FFmpeg 下载失败：{exc}")
+
+        _th.Thread(target=job, daemon=True).start()
+
 
     def _entry(self, parent, var, width: int = 18) -> tk.Entry:
         return tk.Entry(parent, textvariable=var, width=width, relief="flat",
@@ -3799,6 +3863,52 @@ class KomaFlowApp:
                                        name="KomaFlow-assemble")
         self.worker.start()
 
+
+    def _ensure_ffmpeg(self, project) -> bool:
+        """透明 MOV 需要外部 FFmpeg。没有就**问一句，然后自动下载**。
+
+        返回 True 表示可以继续；False 表示用户取消了本次渲染。
+        为什么自己做下载：目标用户往往只有 Blender，让他们去官网找 zip、
+        解压、配 PATH，等于劝退。
+        """
+        needs = project.effective_transparent() and project.alpha_codec_name() != "png"
+        if not needs:
+            return True
+        from komaflow.media.ffmpeg import find_ffmpeg, ENV_FFMPEG
+        try:
+            find_ffmpeg()
+            return True
+        except Exception:      # noqa: BLE001  找不到才往下走
+            pass
+
+        answer = messagebox.askyesno(
+            "透明 MOV 需要 FFmpeg",
+            "输出透明 MOV（带 alpha 的视频）需要 FFmpeg，它不随本软件分发。\n\n"
+            "要现在自动下载吗？约 90 MB，来自 FFmpeg 官方构建站（GPL 构建）。\n"
+            "下载后放在本机用户目录，只用于编码，不会上传任何东西。\n\n"
+            "不想下载的话：把输出格式改成「MP4」或「PNG 图片序列」，这两条都不需要它。",
+        )
+        if not answer:
+            self._log("已取消：透明 MOV 需要 FFmpeg，用户选择不下载")
+            return False
+
+        from komaflow.media import ffmpeg_fetch
+
+        self._log("正在下载 FFmpeg（约 90 MB）…")
+
+        def progress(url: str, done: int, total: int) -> None:
+            pct = int(done / total * 100) if total else 0
+            self._log(f"  FFmpeg 下载 {pct}%  ({done // 1048576}/{max(total, 1) // 1048576} MB)")
+
+        try:
+            target = ffmpeg_fetch.fetch(on_progress=progress, on_note=self._log)
+        except Exception as exc:      # noqa: BLE001
+            messagebox.showerror("下载失败", f"{exc}\n\n可以改成 MP4 或 PNG 图片序列继续。")
+            return False
+        os.environ[ENV_FFMPEG] = str(target)
+        self._log(f"FFmpeg 已就绪：{target}")
+        return True
+
     def on_start(self) -> None:
         if self.worker and self.worker.is_alive():
             return
@@ -3820,6 +3930,10 @@ class KomaFlowApp:
         # 盘够不够 —— **渲之前拦，不要渲到一半写满盘**。
         # 透明那条路（PNG 序列 + MOV）2K 三分钟就是几十 GB，这一道必须有。
         if not self._disk_ok(project):
+            return
+
+        # 透明 MOV 需要外部 FFmpeg：缺了就当场问、当场下载
+        if not self._ensure_ffmpeg(project):
             return
 
         # 存一份"这次要渲的东西"快照，用户事后可以自己进 Blender 调
@@ -4564,6 +4678,8 @@ def main() -> int:
         pass
     root = tk.Tk()
     app = KomaFlowApp(root)
+    # 首次运行：检查外部依赖（缺 FFmpeg 会问一次并自动下载）
+    root.after(600, app._first_run_setup)
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop()
     return 0

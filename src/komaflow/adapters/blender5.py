@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -159,3 +160,27 @@ def _no_window() -> dict:
         "startupinfo": startupinfo,
         "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
     }
+
+def probe_movie_with_blender(exe: str | Path, video: str | Path) -> dict:
+    """用 Blender 读视频信息（替代 ffprobe）。
+
+    返回 ``{"frames": int, "fps": float, "duration": float, "width": int,
+    "height": int}``。Blender 读不动时抛 :class:`KomaFlowError`。
+    """
+    script = Path(__file__).resolve().parent / "scripts" / "probe_movie.py"
+    command = [
+        str(exe), "--background", "--factory-startup",
+        "--python", str(script), "--", str(video),
+    ]
+    proc = subprocess.run(
+        command, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", timeout=300, **_no_window(),
+    )
+    for line in (proc.stdout or "").splitlines():
+        if line.startswith("PROBE_OK "):
+            payload = json.loads(line[len("PROBE_OK "):])
+            return payload
+    raise KomaFlowError(
+        ErrorKind.ASSET_CORRUPT,
+        detail=f"Blender 读不出这个视频：{Path(video).name}",
+    )

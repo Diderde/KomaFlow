@@ -547,7 +547,17 @@ def run_project(
         def prober(path: Path):
             return probe_video(path, ffmpeg)
 
-        plan = plan_run(total_frames, work_dir, limit=params.segment_limit,
+        # 没有 FFmpeg 就**不能拼接**：改成一次渲完整片（单段），
+        # 这样 MP4 也能正常出片，只是这次没有断点续渲。
+        single_pass = False
+        if not frames_only and ffmpeg is None:
+            single_pass = True
+            _emit(on_event, "log", level="warn",
+                  message=("没找到 FFmpeg：本次改为**单段一次性渲染**"
+                           "（不做分段，无法断点续渲）。"
+                           "想要断点续渲请安装 FFmpeg。"))
+        plan = plan_run(total_frames, work_dir,
+                        limit=None if single_pass else params.segment_limit,
                         ext=ext, prober=None if frames_only else prober,
                         first_frame=params.frame_start)
         result.segments_total = len(plan.segments)
@@ -638,7 +648,19 @@ def run_project(
             _emit(on_event, "progress", segment=0, segment_total=1,
                   frame_done=0, frame_total=0, percent=99.0, encoding=True,
                   message="正在把各段拼成一条")
-            concat_segments(rendered_parts, final, ffmpeg=ffmpeg)
+            if single_pass and len(rendered_parts) == 1:
+                # 单段：段文件就是成片，直接改名，不需要 FFmpeg
+                source = rendered_parts[0]
+                if source.resolve() != final.resolve():
+                    final.write_bytes(source.read_bytes())
+                    try:
+                        source.unlink()
+                    except OSError:
+                        pass
+                _emit(on_event, "log", level="info",
+                      message="单段渲染：已直接落成片（未使用 FFmpeg）")
+            else:
+                concat_segments(rendered_parts, final, ffmpeg=ffmpeg)
 
         # ── ⑥ verify_final：**数产物，不数期望值** ────────────────
         # ⚠️ 原来这里断言"成片帧数 == 工程总帧数"，那条断言在续渲场景下是错的：
@@ -648,7 +670,18 @@ def run_project(
         if frames_only and alpha_codec == "png":
             # 上面 _export_png_frames 已按张数核对过，这里不再 probe
             return
-        info_final = probe_video(final, ffmpeg)
+        try:
+            info_final = probe_video(final, ffmpeg)
+        except KomaFlowError:
+            # 没有 ffprobe 时用 Blender 内部 ffmpeg 读（用户机器通常只有 Blender）
+            from ..adapters.blender5 import probe_movie_with_blender
+            payload = probe_movie_with_blender(exe, final)
+            from .verify import VideoInfo
+            info_final = VideoInfo(
+                frame_count=int(payload["frames"]),
+                duration_seconds=float(payload["duration"]),
+                fps=float(payload["fps"]),
+            )
         if info_final.frame_count != rendered_frames:
             raise KomaFlowError(
                 ErrorKind.FRAME_FAILED,
@@ -875,8 +908,10 @@ def _prepare_and_assemble(
     #    以前不查，等渲了几百帧、走到"读产物"才炸，用户白等几十分钟
     #    （用户那边真机报过：586/1000 帧才弹"找不到 ffmpeg"）。
     #    只要图片序列就不需要 FFmpeg，所以先算清输出形态再决定查不查。
-    needs_ffmpeg = project.effective_transparent() is False and \
-        project.alpha_codec_name() != "png"
+    # 🚨 FFmpeg 只在两种情况下必须要：透明 MOV、多段拼接。
+    #    MP4 单段输出用 Blender 内置 ffmpeg 就够了 —— 缺 FFmpeg 时降级为单段，
+    #    而不是把用户拦下来（用户机器上常常只有 Blender）。
+    needs_ffmpeg = project.effective_transparent() and project.alpha_codec_name() != "png"
     if needs_ffmpeg:
         try:
             from ..media.ffmpeg import find_ffmpeg
@@ -885,7 +920,7 @@ def _prepare_and_assemble(
             raise KomaFlowError(
                 ErrorKind.ASSET_CORRUPT,
                 detail=(exc.detail or "找不到 FFmpeg")
-                + "｜若你只需要图片序列，把输出格式改成「PNG 图片序列」就不需要 FFmpeg。",
+                + "｜透明 MOV 必须用它；想免装就把输出格式换成 MP4 或 PNG 图片序列。",
             ) from exc
 
     work_blend = work_dir / "work.blend"

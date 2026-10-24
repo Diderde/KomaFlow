@@ -77,6 +77,8 @@ def _resolve(name: str, explicit: str | Path | None = None) -> Path:
     ]
     local = os.environ.get("LOCALAPPDATA")
     if local:
+        # 程序自动下载的 FFmpeg 放这里
+        guesses.append(Path(local) / "KomaFlow" / "ffmpeg" / f"{name}{suffix}")
         guesses.append(Path(local) / "Microsoft" / "WinGet" / "Links" / f"{name}{suffix}")
         winget_pkgs = Path(local) / "Microsoft" / "WinGet" / "Packages"
         if winget_pkgs.is_dir():
