@@ -231,7 +231,7 @@ Blender 侧脚本在 `bpy.app.handlers.render_post` 里每 25~30 帧覆写一次
 ① prepare 体检：Blender 版本/适配器、mmd_tools、素材存在性、
              磁盘空间、分辨率与显存（K-6.1~K-6.4）→ 不合格就阻断并说人话
 ② assemble 导入素材 → 挂动作/镜头 → 物理装配 → 预热偏移
-             （K-1；**是否需主动施加 +N 偏移待 K-1.8 定论**）
+             （K-1；**是否需主动施加 +N 偏移（K-1.8 已定论：不施加，见 §11）**）
 ③ plan 算工程总帧数 → plan_segments() → 段清单
 ④ 段循环 对每段：
              ├─ 已完成？→ 跳过（K-2.7 段级续渲）
@@ -254,7 +254,7 @@ Blender 侧脚本在 `bpy.app.handlers.render_post` 里每 25~30 帧覆写一次
 
 | # | 验收项 | 判定方式 |
 | --- | --- | --- |
-| 1 | **先验 K-1.8** | 用 `--factory-startup` + 只启用 mmd_tools，导入一个 VMD，打印 action `frame_range`；确认 +30 是插件行为还是 mmd_tools 行为 |
+| 1 | **K-1.8 已验（见 §11）** | 用 `--factory-startup` + 只启用 mmd_tools，导入一个 VMD，打印 action `frame_range`；确认 +30 是插件行为还是 mmd_tools 行为 |
 | 2 | 适配器 `probe` 可用 | 能列出本机 Blender 并标注基准版本（设计取舍：多版本时用户自己选） |
 | 3 | 装配脚本可跑 | 空 Blender → `open_mainfile`/导入 → 挂动作 |
 | 4 | 渲 60 帧出 MP4 | 产物校验通过（不看退出码） |
@@ -283,7 +283,7 @@ Blender 侧脚本在 `bpy.app.handlers.render_post` 里每 25~30 帧覆写一次
 
 | 需求 | 落点 |
 | --- | --- |
-| K-1 预热 | `core/segment.py` + `core/pipeline.py`（装配侧待 K-1.8） |
+| K-1 预热 | `core/segment.py` + `core/pipeline.py`（装配侧见 K-1.8（已定论）） |
 | K-2 分段与续渲 | `core/segment.py` + `core/verify.py` + `core/pipeline.py` |
 | K-3 抽帧 | `core/segment.py` |
 | K-5 进度 | `core/pipeline.py` + 进度文件协议（5.4） |

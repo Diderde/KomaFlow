@@ -26,7 +26,7 @@ Windows 独立程序（不是 Blender 插件）。**V1.1.1**。
 | 物理 | 用 `mmd_tools` 的 `build_rig` 建骨骼跟随约束，再烘焙点缓存 |
 | 预热 | 默认 30 帧静置，让头发裙摆先收敛；第 30 帧起动作才生效 |
 | 渲染 | 按段渲染（每段一个 Blender 进程），断点续渲 |
-| 出片 | 外部 FFmpeg 合并；透明走 PNG 序列 → 带 alpha 的 MOV |
+| 出片 | 有 FFmpeg 时流拷贝合并；没有则单段直接落 MP4；透明走 PNG 序列 → 带 alpha 的 MOV |
 
 ## 环境要求
 
@@ -35,7 +35,7 @@ Windows 独立程序（不是 Blender 插件）。**V1.1.1**。
 | **Windows 10 / 11 64 位** | 只支持 Windows |
 | **Blender 5.0 – 5.99** | 实测 5.2.3 LTS；**不随包分发**，用你自己装的 |
 | **mmd_tools 扩展** | `bl_ext.blender_org.mmd_tools`；界面里可一键触发安装 |
-| **FFmpeg** | 需自备并加进 `PATH`；**同样不随包分发** |
+| **FFmpeg** | 不随包分发；可自行安装，或让程序首次启动时自动下载（见下方联网说明）|
 | Python 3.10+ | 仅源码运行时需要；**零 pip 依赖** |
 
 ## 使用
@@ -60,7 +60,13 @@ python run.py
 - **零运行时依赖**：只用 Python 标准库 + Tk。
 - **工程可交付**：装配完成会在出图目录留一份 `.blend`（含烘焙好的物理），
   可以直接用 Blender 打开改材质 / 灯光 / 镜头，再回来渲。
-- **联网只有一处**：界面里的「安装 mmd_tools」会让 Blender 去官方扩展库下载；不点就不会联网。
+- **联网有三处，都会先弹窗问你，不点就不会联网**：
+  1. 界面里的「安装 mmd_tools」→ 让 Blender 去官方扩展库下载
+  2. **首次启动**会问要不要自动下载 FFmpeg（约 90 MB，装到 `%LOCALAPPDATA%\KomaFlow\ffmpeg`）
+  3. 选了透明 MOV 且本机没有 FFmpeg 时，点「开始渲染」会再问一次
+- ⚠️ 第 2、3 处的下载会**优先尝试第三方 GitHub 加速镜像**
+  （`ghfast.top` / `ghproxy.net` / `gh-proxy.com`），失败才回落到 GitHub 直连与 gyan.dev。
+  镜像只做透明转发；不想让流量经过第三方，就先自己装好 FFmpeg，程序不会再请求下载。
 - **不改系统**：不写注册表、不装服务、不采集遥测。
 
 ## 目录

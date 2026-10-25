@@ -298,7 +298,7 @@ class TestModelCardAcceptsPng(_WindowCase):
 class TestRenderWindowRemembersPaths(_WindowCase):
     """「渲染模型」窗要记住上次的**模型文件**与**出图目录**。
 
-    甲方要求：
+    用户要求：
       > 这个模型文件位置也保留成最近一次用户的位置
 
     ⚠️ 这里记的跟主流程角色卡的记忆（``last_model``）**是两套** ——

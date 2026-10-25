@@ -230,7 +230,6 @@ def main() -> int:
         # 界面最多隔两秒就有新数字。
         PROGRESS_SECONDS = 2.0
         last_write = [0.0]
-        clock = [started_at]
 
         def _flush(force: bool = False, phase: str | None = None) -> None:
             now = time.time()

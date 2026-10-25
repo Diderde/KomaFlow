@@ -102,7 +102,7 @@ def main() -> int:
     if len(rest) < 3:
         print("用法: -- <名字> <输出路径> <图1> [图2 ...]", flush=True)
         return 2
-    _name, out, sources = rest[0], rest[1], rest[2:]
+    out, sources = rest[1], rest[2:]
 
     import numpy as np
 

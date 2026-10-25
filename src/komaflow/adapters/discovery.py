@@ -17,7 +17,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .registry import ADAPTERS, adapter_by_key
+from .registry import ADAPTERS
 
 #: 允许用环境变量显式指定 Blender 路径（优先级最高）
 ENV_BLENDER = "KomaFlow_BLENDER"

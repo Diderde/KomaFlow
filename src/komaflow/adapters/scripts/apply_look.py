@@ -56,7 +56,6 @@ def base_name(name: str) -> str:
 def main() -> int:
     work = spec["work_blend"]
     look = spec["look_blend"]
-    suffix = spec.get("suffix") or "_look"
 
     bpy.ops.wm.open_mainfile(filepath=work)
 

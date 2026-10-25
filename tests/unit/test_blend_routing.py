@@ -1,6 +1,6 @@
 """回归：**点卡片选文件**和**拖放文件**必须走同一套归类。
 
-甲方踩到的坑
+用户踩到的坑
 ------------
 第 1 张卡（角色模型 / 工程）支持 ``.blend``，但 ``.blend`` 有**两种含义**：
 
@@ -76,7 +76,7 @@ class TestBlendRouting(unittest.TestCase):
         self.assertEqual(self.app.vars["blend"].get(), "")
 
     def test_browse_blend_on_model_card_goes_to_blend(self):
-        """**这条就是甲方踩到的那个 bug。**"""
+        """**这条就是用户踩到的那个 bug。**"""
         self._clear()
         with mock.patch("komaflow.ui.app.filedialog.askopenfilename",
                         return_value=r"<示例>\示例模型.blend"):

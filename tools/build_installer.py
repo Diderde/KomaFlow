@@ -337,12 +337,19 @@ def _is_third_party(path: Path) -> bool:
     return any(part in KEEP_VERBATIM_DIRS for part in path.parts)
 
 
-def stage_sources() -> dict:
-    """把要进包的源码复制到 :data:`STAGE`，顺手剥掉注释与 docstring。
+def stage_sources(strip: bool = False) -> dict:
+    """把要进包的源码复制到 :data:`STAGE`。
+
+    ``strip=False``（默认）时**原样复制** —— 包里的 .py 与仓库里的 .py
+    逐字节一致，任何人解包都能对照源码审计自己跑的是什么。
+    ``strip=True`` 才剥注释/docstring（体积小一点，但包里与仓库不一致）。
 
     返回统计（方便报告里写"省了多少"）。
     """
-    print("[0/5] 剥注释与 docstring（只影响进包的那份，源码保持可读）…")
+    if strip:
+        print("[0/5] 剥注释与 docstring（只影响进包的那份，源码保持可读）…")
+    else:
+        print("[0/5] 原样复制源码（不剥注释：保证包里 .py 与仓库逐字节一致）…")
     shutil.rmtree(STAGE, ignore_errors=True)
     STAGE.mkdir(parents=True, exist_ok=True)
 
@@ -357,7 +364,7 @@ def stage_sources() -> dict:
         text = path.read_text(encoding="utf-8")
         original_bytes += len(text.encode("utf-8"))
 
-        if _is_third_party(path.relative_to(SRC / "komaflow")) \
+        if (not strip) or _is_third_party(path.relative_to(SRC / "komaflow")) \
                 or path.name in KEEP_VERBATIM_FILES:
             result = text
         else:
@@ -398,11 +405,13 @@ def stage_sources() -> dict:
                 continue
             dest = target / path.relative_to(source)
             dest.parent.mkdir(parents=True, exist_ok=True)
-            if path.suffix == ".py" and extra.endswith("scripts"):
+            if strip and path.suffix == ".py" and extra.endswith("scripts"):
                 text = path.read_text(encoding="utf-8")
                 light = strip_python_light(text, str(path))
                 dest.write_text(light, encoding="utf-8")
             else:
+                # 默认原样复制：包里的 Blender 脚本必须与仓库逐字节一致，
+                # 否则"你跑的二进制是不是这份源码"就无从核对（审计提出过）。
                 shutil.copy2(path, dest)
     for name in ("ui/assets",):
         source = SRC / "komaflow" / name
@@ -699,6 +708,11 @@ def audit(app_dir: Path) -> dict:
         "不该带的文件": forbidden,
         "编译垃圾目录": junk_dirs,
         "第三方许可在包里": has_license,
+        "运行库许可原文在包里": all(
+            (app_dir / "第三方许可原文" / n).is_file()
+            for n in ("LICENSE-APACHE-2.0.txt", "LICENSE-PSF-Python.txt",
+                      "LICENSE-zlib.txt", "LICENSE-libffi.txt",
+                      "NOTICE-OpenSSL.txt")),
         "误带Blender": has_blender,
     }
 
@@ -745,19 +759,41 @@ def tidy_root(app_dir: Path) -> None:
             shutil.copy2(source, target)
             print(f" -> {target.name}")
 
+    # Issue #5：随包再分发了 OpenSSL / zlib / libffi / Python 运行库，
+    # 但包里一份对应许可原文都没有。这里把「第三方许可原文/」整目录搬进包根，
+    # 顺手校验五个文件都在 —— 缺了就当体检失败（宁可打包报错，别悄悄少文件）。
+    lic_src = SRC.parent.parent / "第三方许可原文"
+    lic_dst = app_dir / "第三方许可原文"
+    need = ("LICENSE-APACHE-2.0.txt", "LICENSE-PSF-Python.txt",
+            "LICENSE-zlib.txt", "LICENSE-libffi.txt", "NOTICE-OpenSSL.txt")
+    if lic_src.is_dir():
+        lic_dst.mkdir(parents=True, exist_ok=True)
+        for name in need:
+            src_file = lic_src / name
+            if src_file.is_file():
+                shutil.copy2(src_file, lic_dst / name)
+        missing = [n for n in need if not (lic_dst / n).is_file()]
+        print(f" -> 第三方许可原文/（{len(need) - len(missing)}/{len(need)} 个）")
+        if missing:
+            print(f" !! 缺许可原文：{missing}")
+    else:
+        print(f" !! 找不到许可原文目录：{lic_src}")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="打包 KomaFlow 安装包")
     parser.add_argument("--with-ffmpeg", action="store_true",
                         help="把便携 FFmpeg 一起打进去（开箱即用，但包大很多）")
     parser.add_argument("--no-zip", action="store_true", help="不压 zip")
+    parser.add_argument("--strip-comments", action="store_true",
+                        help="剥掉脚本注释（体积小一点，但包里的 .py 就与仓库不一致了）")
     args = parser.parse_args()
 
     version = _version()
     print(f"=== 打包 {APP_NAME} {version} ===")
     print(f"源码 = {SRC}")
 
-    strip_info = stage_sources()
+    strip_info = stage_sources(strip=args.strip_comments)
     app_dir = build_exe()
     strip_check = verify_stripped(app_dir, STAGE)
 

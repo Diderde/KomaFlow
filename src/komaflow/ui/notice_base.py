@@ -326,7 +326,6 @@ class NoticeWindow:
         outline = T.NAVY if primary else T.BEIGE_LINE
         fg = "#FFFFFF" if primary else T.NAVY
         radius = T.round_rect_radius(h)
-        tag = f"btn{id(command)}"
 
         # ⚠️ **悬停绝对不能重建图形、也不能 tag_raise。**
         #

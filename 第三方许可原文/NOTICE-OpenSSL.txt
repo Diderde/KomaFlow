@@ -1,0 +1,19 @@
+OpenSSL 3.x
+===========
+
+本程序分发的 _internal\libcrypto-3.dll 与 _internal\libssl-3.dll
+来自 CPython 3.12 官方 Windows 构建（随 _ssl.pyd / _hashlib.pyd 引入），
+其内嵌版本标识为 "OpenSSL 3.0.13 30 Jan 2024"。
+
+OpenSSL 自 3.0 起采用 Apache License 2.0 授权：
+
+    https://www.openssl.org/source/license.html
+
+许可全文见同目录 LICENSE-APACHE-2.0.txt。
+
+按 Apache-2.0 第 4 条，随二进制分发时一并提供：
+  · 本文件（组件与版本说明）
+  · 许可全文（LICENSE-APACHE-2.0.txt）
+  · 保留原二进制中的版权与归属信息（未作任何修改）
+
+OpenSSL 项目：https://www.openssl.org/

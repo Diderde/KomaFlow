@@ -31,6 +31,7 @@ from ..adapters import BASELINE, run_blender_script, select_adapter
 from ..adapters.discovery import discover_blender
 from ..media.ffmpeg import (concat_segments, concat_streams,
                             encode_mov_alpha, probe_video)
+from .paths import safe_basename
 from .errors import ErrorKind, KomaFlowError, last_meaningful_line
 from .journal import JOURNAL, Journal
 from .project import Project
@@ -78,7 +79,7 @@ def make_sink(on_event: Callable[[dict], None] | None,
               journal: Journal = JOURNAL) -> Callable[[dict], None]:
     """给事件流加一层"落盘"。
 
-    甲方口径：**日志不给用户看**。所以界面只收「步骤 / 进度 / 一句人话报错」，
+    用户口径：**日志不给用户看**。所以界面只收「步骤 / 进度 / 一句人话报错」，
     完整技术记录在这里统一写进文件。
 
     progress 事件刻意**不落盘** —— 一段 1000 帧会打 40 条，纯噪音。
@@ -177,7 +178,7 @@ def render_fingerprint(project: Project, report: dict) -> str:
 
     🚨 **为什么必须有这个东西**
 
-    甲方报的现象：
+    用户报的现象：
 
     > 输出的视频依旧是同一个样子，而且瞬间完成，是不是压根没跑，
     > 单纯是把之前的视频复制了一份当成新的了
@@ -244,7 +245,7 @@ def invalidate_stale_segments(
     """指纹变了就把旧段产物全删掉，并记下新指纹。
 
     不删会怎么样：``plan_run`` 会把它们判成"已完成"直接跳过 ——
-    那正是甲方看到的"瞬间完成、画面没变"。
+    那正是用户看到的"瞬间完成、画面没变"。
 
     返回 ``{"changed": bool, "removed": int}``。
     """
@@ -497,7 +498,7 @@ def run_project(
                   message="输出格式：PNG 图片序列（只出图，不编码视频，不需要 FFmpeg）")
         if transparent:
             # ⚠️ 只说"出一条"，不再提"另外垫一条 MP4" —— 那条已去掉，
-            # 用户选什么就出什么（甲方要求，见 _encode_png_tracks 的说明）。
+            # 用户选什么就出什么（用户要求，见 _encode_png_tracks 的说明）。
             _emit(on_event, "log", level="info",
                   message=("透明背景：分段产物改为 PNG 序列（RGBA），"
                            f"成片是「{alpha_codec}」的 MOV"))
@@ -537,7 +538,7 @@ def run_project(
         # 🚨 **先按内容指纹作废旧段**，再排计划。
         # 顺序不能反：要是先排了计划，旧段会被判成"已完成"直接跳过，
         # 最后 concat 只是把上一次的段拷成新文件名 ——
-        # 那就是甲方报的"瞬间完成、画面还是同一个"
+        # 那就是用户报的"瞬间完成、画面还是同一个"
         # （详见 render_fingerprint 的说明）。
         result.fingerprint = render_fingerprint(project, report)
         invalidation = invalidate_stale_segments(
@@ -608,7 +609,7 @@ def run_project(
             final, exported = _export_png_frames(
                 segments=[item.segment for item in plan.segments],
                 work_dir=work_dir, output_dir=output_dir,
-                basename=project.output.basename, on_event=on_event,
+                basename=safe_basename(project.output.basename), on_event=on_event,
             )
             result.output = final
             result.alpha_output = None
@@ -635,13 +636,13 @@ def run_project(
             final_mov, final = _encode_png_tracks(
                 segments=encoding_segments, work_dir=work_dir,
                 output_dir=output_dir,
-                basename=project.output.basename, params=params,
+                basename=safe_basename(project.output.basename), params=params,
                 codec=alpha_codec,
                 ffmpeg=ffmpeg, on_event=on_event,
             )
         else:
             final = unique_output_path(
-                output_dir / f"{project.output.basename}.mp4")
+                output_dir / f"{safe_basename(project.output.basename)}.mp4")
             # ⚠️ 这一段也要报进度：用户看到的是"帧渲完了却没结束"，
             # 其实在拼接/封 MP4。不报进度就又是一次"卡死"投诉。
             _emit(on_event, "stage", stage="encode", message="正在拼接成片")
@@ -652,7 +653,10 @@ def run_project(
                 # 单段：段文件就是成片，直接改名，不需要 FFmpeg
                 source = rendered_parts[0]
                 if source.resolve() != final.resolve():
-                    final.write_bytes(source.read_bytes())
+                    # 🚨 这里原来写的是 write_bytes(read_bytes()) ——
+                    # 成片多大就把多少字节整体读进内存（2K 长片能到几个 GB，
+                    # 渲染到 99% 时爆内存）。改成流式复制，内存占用与文件大小无关。
+                    shutil.copy2(source, final)
                     try:
                         source.unlink()
                     except OSError:
@@ -702,9 +706,7 @@ def run_project(
         result.errors.append(f"{type(exc).__name__}: {exc}")
         # 🚨 把**完整调用栈**记进日志：原来只说"TypeError: …"，用户和我都只能猜。
         import traceback as _tb
-        _emit(on_event, "log", level="error",
-              message="出错的调用栈：\n" + _tb.format_exc())
-        import traceback as _tb
+        # #9② 这段原来写了两遍，每个意外异常都会连发两份一模一样的调用栈
         _emit(on_event, "log", level="error",
               message="出错的调用栈：\n" + _tb.format_exc())
         _emit(on_event, "error", kind="unexpected", message=f"{type(exc).__name__}: {exc}")
@@ -824,14 +826,34 @@ _INPUT_KEYS = ("route", "model", "blend_in", "motions", "camera_motion",
                "stage", "preroll_frames", "transparent", "look_from_blend")
 
 
+def _file_fingerprint(path) -> list | None:
+    """(大小, 修改时间) —— 用来识别"路径没变但内容换了"。
+
+    同名覆盖素材是最常见的一种：用户把 **同一个文件名** 的模型换成了另一版，
+    路径字符串一模一样。只比路径的话，装配层会认为"没变"，直接复用旧工程，
+    用户改完的模型等于没生效。
+    """
+    try:
+        stat = Path(path).stat()
+    except (OSError, TypeError, ValueError):
+        return None
+    return [int(stat.st_size), int(stat.st_mtime_ns)]
+
+
 def _key_inputs(build_spec: dict) -> dict:
     """把关键输入挑出来（用于复用前的逐项核对）。"""
     out = {}
+    stats: dict[str, list] = {}
     for key in _INPUT_KEYS:
         value = build_spec.get(key)
         if isinstance(value, list):
             value = [str(v) for v in value]
+            stats[key] = [_file_fingerprint(v) for v in value]
+        elif isinstance(value, str) and value:
+            stats[key] = [_file_fingerprint(value)]
         out[key] = value
+    # 路径之外再看一眼文件本身：同名覆盖也要重装
+    out["_stat"] = stats
     return out
 
 
@@ -849,6 +871,9 @@ def _same_inputs(saved: dict, build_spec: dict) -> bool:
     for key in _INPUT_KEYS:
         if norm(saved.get(key)) != norm(current.get(key)):
             return False
+    # 文件指纹：老工程档里没有这一项 → 当作"变了"，重装一次最稳
+    if saved.get("_stat") != current.get("_stat"):
+        return False
     return True
 
 
@@ -857,7 +882,7 @@ def _assembly_fingerprint(build_spec: dict) -> str:
 
     为什么要单独算：用户改「渲哪一段」或「出多大」，物理一个字都不用变；
     原来整份 ``build_spec`` 一起比，改个区间就重新 build_rig + 烘焙，
-    白等几分钟（甲方原话："也不用重新跑物理"）。
+    白等几分钟（用户原话："也不用重新跑物理"）。
     """
     relevant = {k: v for k, v in build_spec.items() if k not in _RENDER_ONLY_KEYS}
     blob = json.dumps(relevant, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -867,7 +892,7 @@ def _assembly_fingerprint(build_spec: dict) -> str:
 def _durable_paths(project: Project) -> tuple[Path, Path]:
     """非临时工程文件的位置（出图目录里，跟成片放一起）。"""
     out_dir = Path(project.output.dir)
-    name = (project.output.basename or "KomaFlow").strip() or "KomaFlow"
+    name = safe_basename(project.output.basename)
     safe = _safe_filename(name)
     blend = out_dir / f"{safe}.blend"
     return blend, blend.with_suffix(".blend.json")
@@ -906,7 +931,7 @@ def _prepare_and_assemble(
 
     # 🚨 FFmpeg 预检：视频输出要靠它拼接与校验。
     #    以前不查，等渲了几百帧、走到"读产物"才炸，用户白等几十分钟
-    #    （甲方那边真机报过：586/1000 帧才弹"找不到 ffmpeg"）。
+    #    （用户那边真机报过：586/1000 帧才弹"找不到 ffmpeg"）。
     #    只要图片序列就不需要 FFmpeg，所以先算清输出形态再决定查不查。
     # 🚨 FFmpeg 只在两种情况下必须要：透明 MOV、多段拼接。
     #    MP4 单段输出用 Blender 内置 ffmpeg 就够了 —— 缺 FFmpeg 时降级为单段，
@@ -943,7 +968,6 @@ def _prepare_and_assemble(
         "height": params.height,
         # 「只渲这一段」的起止（含预热帧，都是工程时间轴的绝对帧号）
         "frame_start": params.frame_start,
-        "frame_end": params.frame_end,
         # 物理：恒开，走 mmd_tools 自带那一套（导入带 PHYSICS + build_rig + 烘焙）。
         # 没有开关也没有档位 —— 参数全用 mmd_tools 的默认值。
         "frame_end": params.frame_end,
@@ -956,7 +980,7 @@ def _prepare_and_assemble(
         "progress": str(work_dir / "build_progress.json"),
         # 🚨 **装配脚本自身的指纹。**
         #
-        # 甲方报「物理依旧未启动」，根子就在这里：复用判据只比 build_spec
+        # 用户报「物理依旧未启动」，根子就在这里：复用判据只比 build_spec
         # （素材路径与参数），**不看装配脚本本身变没变**。于是脚本加了
         # build_rig + 物理烘焙之后，旧的 work.blend 仍被当成「素材没变」直接
         # 复用 —— 那里面根本没有刚体约束，也没有烘焙缓存。
@@ -971,7 +995,7 @@ def _prepare_and_assemble(
 
     # ── 非临时工程文件（分段渲染的落点）──
     #
-    # 甲方要求：「确认开始渲染，先把文件存下来（非临时），之后在文件里分段渲，
+    # 用户要求：「确认开始渲染，先把文件存下来（非临时），之后在文件里分段渲，
     # 不用重跑物理」。所以装配完就把它复制到**出图目录**，并在旁边放一份指纹，
     # 下次（包括只改渲染区间）直接用它，不再 build_rig / 烘焙。
     durable_blend, durable_key = _durable_paths(project)
@@ -1027,7 +1051,13 @@ def _prepare_and_assemble(
         except ValueError:
             previous = None
         if previous == build_spec:
-            cached = json.loads(build_report_path.read_text(encoding="utf-8"))
+            # #9① build_report.json 是 build.py 非原子写出来的，渲染中途被杀
+            # 就会留下截断文件。这里裸 json.loads 一抛，整次渲染直接 unexpected
+            # 失败 —— 对 spec 文件都做了保护，这个缓存文件同风险也该保护。
+            try:
+                cached = json.loads(build_report_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cached = None
             ok_work, why_work = _project_usable(work_blend, cached)
             if cached.get("ok") and ok_work:
                 _emit(on_event, "log", level="info",
@@ -1072,6 +1102,19 @@ def _prepare_and_assemble(
     # 下一次渲染直接拿它去渲 → Blender 退出码 1、产物 missing。
     if cancel is not None and cancel.is_set():
         raise KomaFlowError(ErrorKind.USER_CANCELLED)
+
+    # 🚨 **物理烘焙失败 = 这次装配失败，不许往下走。**
+    #
+    # 原来这里只写一行 "物理：没有烘焙（…）" 就继续，
+    # 然后把这份**没有物理缓存**的工程存成"可复用工程"，
+    # 下次渲染直接拿它来用 —— 用户看到的是"物理明明开了却没动"，
+    # 而且怎么重渲都复现（因为复用的是坏的）。
+    bake_report = report.get("physics_bake") or {}
+    if bake_report.get("error"):
+        raise KomaFlowError(
+            ErrorKind.PHYSICS_FAILED,
+            detail="物理烘焙失败，本次装配已作废：" + str(bake_report["error"]),
+        )
 
     # ── 观感迁移（能力包材质 → 我们的工程）──
     #
@@ -1186,7 +1229,7 @@ def _collect_report_notes(project: Project, report: dict, result: "RunResult", o
 def default_still_name(project: Project, frame: int) -> str:
     """单帧预览的**默认名字**：动作文件名去掉后缀。
 
-    甲方要求：
+    用户要求：
 
     > 这里的右面应该出现一个命名窗口，没动就是显示默认名称（动作名称不带后缀）
 
@@ -1239,7 +1282,7 @@ def render_still(
 
     ⚠️ 产物落在**输出目录**（用户找得到的地方），不再只塞在 ``work/preview``
        里面。原来固定叫 ``still_<帧号>.png`` 藏在中间产物目录 ——
-       名字不是用户的、位置他也找不到，甲方直接问"这不是我导入的"。
+       名字不是用户的、位置他也找不到，用户直接问"这不是我导入的"。
     """
     work_dir = Path(work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -1295,7 +1338,7 @@ def render_still(
 
     if not output.is_file():
         # 🚨 **先看是不是用户按了终止。**
-        # 甲方报「渲完模型之后单帧渲染的图片无法查看」，日志里其实是：
+        # 用户报「渲完模型之后单帧渲染的图片无法查看」，日志里其实是：
         # 17:58:16 已请求终止 → 17:58:17 still 阶段照样跑 → 报「素材损坏」。
         # 把"用户取消"说成"素材损坏"是谎报，会把人带去查模型文件。
         if cancel is not None and cancel.is_set():
@@ -1394,7 +1437,7 @@ def _render_one_segment(
 
         def on_progress(payload, index=index, segment=segment, done_before=done_before):
             frames_done = done_before + int(payload.get("frames_done") or 0)
-            # ⚠️ 优先用**最近 10 帧的滑动平均**（甲方要的显示口径）：
+            # ⚠️ 优先用**最近 10 帧的滑动平均**（用户要的显示口径）：
             # 总平均（elapsed/done）会被头几帧的着色器编译开销拉高，
             # 遇到复杂帧又反应迟钝，ETA 会一直骗人。
             per_frame = payload.get("seconds_per_frame_10") \
@@ -1481,7 +1524,7 @@ def _render_one_segment(
 def unique_output_path(target: Path) -> Path:
     """给成片找一个**不会覆盖已有文件**的路径。
 
-    甲方报过：渲一次把上一次的作品顶掉了。原因就是成片文件名固定是
+    用户报过：渲一次把上一次的作品顶掉了。原因就是成片文件名固定是
     ``<工程名>.mov``，同一个工程渲两遍自然就覆盖。
 
     做法：``名字.mov`` 被占了就试 ``名字 (2).mov``、``名字 (3).mov`` …
@@ -1506,10 +1549,16 @@ def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
     PNG 序列模式下分段产物散在 ``segments/`` 里，用户要的是一个能直接用的
     文件夹。导出时**连续重新编号**（第 2 段不会从 0 重新数），并核对总张数。
     """
-    target_dir = output_dir / f"{basename}_frames"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    for stale in target_dir.glob("*.png"):
-        stale.unlink()
+    # 🚨 先导出到临时目录，**全部成功之后**才替换正式目录。
+    #
+    # 原来是一进来就把 ``<名>_frames/`` 里的 PNG 全删掉再开始拷 ——
+    # 只要中途任一段失败（素材损坏 / 磁盘满 / 用户终止），
+    # 用户上一次的 PNG 序列已经被删光了，等于"失败还顺手清了现场"。
+    target_dir = output_dir / f"{safe_basename(basename)}_frames"
+    staging = target_dir.with_name(target_dir.name + ".tmp")
+    if staging.is_dir():
+        shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
 
     index = 0
     for order, segment in enumerate(segments):
@@ -1521,7 +1570,8 @@ def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
                 detail=f"第 {order + 1} 段没有 PNG 帧：{frames.describe()}",
             )
         for source in files:
-            (target_dir / f"{basename}_{index:04d}.png").write_bytes(source.read_bytes())
+            # 帧图也走流式复制（一张 2K PNG 有大几 MB，积少成多）
+            shutil.copy2(source, staging / f"{safe_basename(basename)}_{index:04d}.png")
             index += 1
         if on_event is not None:
             _emit(on_event, "progress", segment=order,
@@ -1530,7 +1580,13 @@ def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
                   percent=99.0 if order + 1 == len(segments) else 90.0,
                   encoding=True, message=f"正在导出第 {order + 1} 段")
     if index == 0:
+        shutil.rmtree(staging, ignore_errors=True)
         raise KomaFlowError(ErrorKind.ASSET_CORRUPT, detail="一张 PNG 都没导出")
+
+    # 全部导出成功 → 用新目录整体替换旧目录（旧的那批这时才删）
+    if target_dir.is_dir():
+        shutil.rmtree(target_dir, ignore_errors=True)
+    staging.replace(target_dir)
     return target_dir, index
 
 
@@ -1549,7 +1605,7 @@ def _encode_png_tracks(
 
     🚨 **用户选什么就出什么，不再额外追加 MP4。**
        原来在透明路径上会额外编一条"垫深褐色的 MP4"（``points_possible``），
-       理由是"方便直接发给别人看"。甲方明确要求：
+       理由是"方便直接发给别人看"。用户明确要求：
 
        > 用户选择什么就输出什么，不用明明选择 MOV 还额外追加 MP4，浪费资源。
 
@@ -1564,14 +1620,14 @@ def _encode_png_tracks(
     if not segments:
         raise KomaFlowError(ErrorKind.ASSET_CORRUPT, detail="没有可编码的 PNG 序列")
 
-    target = unique_output_path(output_dir / f"{basename}.mov")
-    parts_dir = output_dir / f"{basename}_parts"
+    target = unique_output_path(output_dir / f"{safe_basename(basename)}.mov")
+    parts_dir = output_dir / f"{safe_basename(basename)}_parts"
     parts_dir.mkdir(parents=True, exist_ok=True)
     staging_root = parts_dir / "_frames"
 
     # 🚨 **编码阶段必须有进度反馈。**
     #
-    # 甲方报的"渲到 300/300 之后一直不结束、然后突然提示完成"就是这里：
+    # 用户报的"渲到 300/300 之后一直不结束、然后突然提示完成"就是这里：
     # 帧渲完之后还要把 PNG 序列逐段编成 MOV、再流拷贝拼接 ——
     # 2K 的长片这一步要几分钟，而界面上进度条早就 100% 了、什么都不会动，
     # 看着就像挂了。所以这里按段报进度，让它"有动静"。

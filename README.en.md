@@ -61,8 +61,13 @@ Read `User-Guide-EN.txt` (inside the release package) for the full walkthrough.
 - **The project is reusable** — assembly saves `<name>.blend` next to your output,
   with physics already baked. Re-render, change the range, or edit it in Blender
   and render again without re-baking.
-- **One network touch point** — the "install mmd_tools" action lets Blender fetch
-  the add-on from the official repository. Nothing else goes online.
+- **Three network touch points — each asks first, nothing happens unless you agree**:
+  1. "install mmd_tools" → Blender fetches the add-on from the official repository
+  2. **First launch** offers to download FFmpeg (~90 MB, into `%LOCALAPPDATA%\KomaFlow\ffmpeg`)
+  3. Transparent MOV without FFmpeg asks again when you hit Start
+- ⚠️ Downloads in 2 and 3 **try third-party GitHub mirrors first**
+  (`ghfast.top` / `ghproxy.net` / `gh-proxy.com`), falling back to GitHub direct and gyan.dev.
+  Mirrors only relay the file; if you do not want that, install FFmpeg yourself and the app never asks.
 - **No telemetry**, no accounts, no registry writes, no services.
 
 ## Layout

@@ -29,3 +29,13 @@ fixed promptly.
 their respective owners. This project is not affiliated with or endorsed by any
 of them. Character names that may appear in third-party notices are used only
 for identification (nominative use).
+
+### Bundled runtime DLLs (part of the Python runtime)
+
+| Component | Files | License | Full text |
+|---|---|---|---|
+| **OpenSSL 3.0.13** | `_internal/libcrypto-3.dll`, `_internal/libssl-3.dll` | **Apache-2.0** | `第三方许可原文/LICENSE-APACHE-2.0.txt`, `NOTICE-OpenSSL.txt` |
+| **zlib 1.2.13** | `_internal/zlib1.dll` | **zlib License** | `第三方许可原文/LICENSE-zlib.txt` |
+| **libffi 8** | `_internal/libffi-8.dll` | **MIT-style** | `第三方许可原文/LICENSE-libffi.txt` |
+| **Python runtime** | `_internal/python312.dll` and friends | **PSF License 2.0** | `第三方许可原文/LICENSE-PSF-Python.txt` |
+
