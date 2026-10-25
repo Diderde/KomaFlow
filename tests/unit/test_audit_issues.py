@@ -66,6 +66,17 @@ class TestIssue4PngExport(unittest.TestCase):
             self.assertIn(out.resolve(), target.resolve().parents,
                           f"导出目录跑出输出目录了：{target}")
 
+    def test_failed_export_leaves_no_temp_dir(self):
+        """失败后不该留下 ``<名>_frames.tmp`` 这种半成品目录。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            work, out = self._scene(base, "tmpclean", with_frames=False)
+            with self.assertRaises(KomaFlowError):
+                P._export_png_frames(segments=plan_segments(6, 6), work_dir=work,
+                                     output_dir=out, basename="hello")
+            leftovers = [p.name for p in out.iterdir()]
+            self.assertEqual(leftovers, [], f"输出目录留下了东西：{leftovers}")
+
     def test_success_replaces_previous_frames(self):
         """成功时旧的那批要被替换掉（不能越攒越多）。"""
         with tempfile.TemporaryDirectory() as tmp:

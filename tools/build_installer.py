@@ -762,7 +762,7 @@ def tidy_root(app_dir: Path) -> None:
     # Issue #5：随包再分发了 OpenSSL / zlib / libffi / Python 运行库，
     # 但包里一份对应许可原文都没有。这里把「第三方许可原文/」整目录搬进包根，
     # 顺手校验五个文件都在 —— 缺了就当体检失败（宁可打包报错，别悄悄少文件）。
-    lic_src = SRC.parent.parent / "第三方许可原文"
+    lic_src = ROOT / "第三方许可原文"
     lic_dst = app_dir / "第三方许可原文"
     need = ("LICENSE-APACHE-2.0.txt", "LICENSE-PSF-Python.txt",
             "LICENSE-zlib.txt", "LICENSE-libffi.txt", "NOTICE-OpenSSL.txt")
@@ -824,6 +824,7 @@ def main() -> int:
              f"解压后体积 : {report['体积MB']} MB",
              f"FFmpeg : {ffmpeg_note}",
              f"第三方许可 : {'在' if report['第三方许可在包里'] else '★ 缺了！'}",
+             f"运行库许可 : {'在' if report['运行库许可原文在包里'] else '★ 缺了！'}",
              f"误带Blender: {'★★ 有！' if report['误带Blender'] else '没有（正确）'}",
              f"剥注释 : {strip_info['剥了']} 个文件，源码 "
              f"{strip_info['原KB']} KB → {strip_info['新KB']} KB"

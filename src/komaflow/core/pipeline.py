@@ -1561,24 +1561,32 @@ def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
     staging.mkdir(parents=True, exist_ok=True)
 
     index = 0
-    for order, segment in enumerate(segments):
-        frames = png_frames_of(work_dir, segment)
-        files = sorted(list_png_frames(frames.directory, frames.prefix))
-        if not files:
-            raise KomaFlowError(
-                ErrorKind.ASSET_CORRUPT,
-                detail=f"第 {order + 1} 段没有 PNG 帧：{frames.describe()}",
-            )
-        for source in files:
-            # 帧图也走流式复制（一张 2K PNG 有大几 MB，积少成多）
-            shutil.copy2(source, staging / f"{safe_basename(basename)}_{index:04d}.png")
-            index += 1
-        if on_event is not None:
-            _emit(on_event, "progress", segment=order,
-                  segment_total=len(segments), frame_done=index,
-                  frame_total=index,
-                  percent=99.0 if order + 1 == len(segments) else 90.0,
-                  encoding=True, message=f"正在导出第 {order + 1} 段")
+    try:
+        for order, segment in enumerate(segments):
+            frames = png_frames_of(work_dir, segment)
+            files = sorted(list_png_frames(frames.directory, frames.prefix))
+            if not files:
+                raise KomaFlowError(
+                    ErrorKind.ASSET_CORRUPT,
+                    detail=f"第 {order + 1} 段没有 PNG 帧：{frames.describe()}",
+                )
+            for source in files:
+                # 帧图也走流式复制（一张 2K PNG 有大几 MB，积少成多）
+                shutil.copy2(source,
+                             staging / f"{safe_basename(basename)}_{index:04d}.png")
+                index += 1
+            if on_event is not None:
+                _emit(on_event, "progress", segment=order,
+                      segment_total=len(segments), frame_done=index,
+                      frame_total=index,
+                      percent=99.0 if order + 1 == len(segments) else 90.0,
+                      encoding=True, message=f"正在导出第 {order + 1} 段")
+    except BaseException:
+        # 任何一步失败（素材坏了 / 盘满 / 用户终止）都要把半成品清掉，
+        # 同时**旧的那批 PNG 一个都不许动**。
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
     if index == 0:
         shutil.rmtree(staging, ignore_errors=True)
         raise KomaFlowError(ErrorKind.ASSET_CORRUPT, detail="一张 PNG 都没导出")
