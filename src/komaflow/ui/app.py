@@ -142,13 +142,13 @@ ZONES: list[tuple[str, str, str]] = [
 
 #: 「动作」那张卡的占位槽（**只用来标记"这是一张列表卡"**）。
 #:
-#: ⚠️ 数量**不再固定为 2**。用户要求：
+#: ⚠️ 数量**不再固定为 2**。甲方要求：
 #: > 这个动作和表情，可以添加多个而不是局限于2个
 #: 所以卡片上的行数跟着实际文件数走（见 ``Card.show_slots``），
 #: 这里只留一个空占位，表示"这张卡走列表模式"。
 MOTION_SLOTS: tuple[str, ...] = ("",)
 
-#: 执行时的四步。措辞刻意避开行话（"分段""装配""校验"这类词用户看着费劲）。
+#: 执行时的四步。措辞刻意避开行话（"分段""装配""校验"这类词甲方看着费劲）。
 STEPS: list[tuple[str, str]] = [
     ("assemble", "整理素材"),
     ("render", "分批渲染"),
@@ -280,7 +280,7 @@ ON_OFF = ("开", "关")
 
 #: 那个开关的说明。四种状态各有一条（由 ``_transparent_state()`` 选）。
 #:
-#: ⚠️ 这里的措辞是用户逐字定的：
+#: ⚠️ 这里的措辞是甲方逐字定的：
 #: * 「有角色没背景 → 自动打开」= 出透明，这是最常用的用法
 #: * 「有背景没角色」也**能点**（旧版会灰掉）—— 用户可能就是想先摆空景
 TRANSPARENT_TIP = (
@@ -389,7 +389,7 @@ class KomaFlowApp:
             "framing": tk.StringVar(value="全身"),
             "still_frame": tk.StringVar(value="30"),
             #: 单帧预览的命名。**留空 = 跟着动作名走**（去掉 .vmd 后缀）——
-            #: 用户要求"没动就是显示默认名称（动作名称不带后缀）"。
+            #: 甲方要求"没动就是显示默认名称（动作名称不带后缀）"。
             "still_name": tk.StringVar(value=""),
             "probe": tk.StringVar(value="尚未探测 —— 点「探测本机」"),
             "percent": tk.StringVar(value="0.00%"),
@@ -520,7 +520,7 @@ class KomaFlowApp:
     def _restore_last_model(self) -> None:
         """启动时把**上次确定用过的**角色模型填回第 1 张卡。
 
-        用户要求：
+        甲方要求：
 
         > 角色板块应该带有记忆性，上一次用户确定使用之后，下一次打开应该
         > 默认还是那个，直到用户渲染下一个模型或者用户导入模型
@@ -843,7 +843,7 @@ class KomaFlowApp:
 
         ⚠️ Tk 的 ``iconphoto`` / ``iconbitmap`` 在 Windows 上**经常不生效**
         （特别是 ``pythonw`` 启动、窗口已经映射之后），标题栏会退回系统默认图标 ——
-        用户截图里那个"通用方块图标"就是这么来的。
+        甲方截图里那个"通用方块图标"就是这么来的。
 
         ``LoadImageW`` + ``WM_SETICON`` 是唯一稳的做法：直接从 .ico 载入指定尺寸的
         图标句柄，再塞给窗口。大/小两个尺寸都要设，任务栏用的是大的那个。
@@ -913,7 +913,7 @@ class KomaFlowApp:
         最初用 ``overrideredirect(True)`` 把系统窗口框整个去掉、自己画标题栏，
         以为那样才能"一体化"。代价是拖边改大小、双击最大化、系统贴边、
         多屏 DPI、任务栏按钮**全部要自己重写** —— 补了几样，剩下的永久缺失
-        （用户一句"为什么抖音 B站 能拖边"就问穿了）。
+        （甲方一句"为什么抖音 B站 能拖边"就问穿了）。
 
         之后又试了 ``DwmExtendFrameIntoClientArea``（抖音看起来用的那个），
         但延伸之后 DWM 会在那块上叠自己的渐变/强调色，**颜色不受我们控制**，
@@ -1143,7 +1143,7 @@ class KomaFlowApp:
            「渲染背景」= **开** → 照背景/舞台渲（**不出**透明）
            「渲染背景」= **关** → 出透明成片
 
-        规则（用户 2026-10-17 定，与 ``core/project`` 那套互为镜像）：
+        规则（甲方 2026-10-17 定，与 ``core/project`` 那套互为镜像）：
 
         ============ ============ ================================
         角色 舞台 这一项
@@ -1214,7 +1214,7 @@ class KomaFlowApp:
         size = budget.estimate_total(
             frames, self._int_var("width", 2560), self._int_var("height", 1440),
             alpha_codec=codec or budget.DEFAULT_ALPHA_CODEC,
-            # ⚠️ 不再有"额外那条 MP4"了（用户要求选什么就出什么），
+            # ⚠️ 不再有"额外那条 MP4"了（甲方要求选什么就出什么），
             # 所以估算也只算一条轨 —— 否则会把占用报成两倍。
             also_mp4=False,
         )
@@ -1245,7 +1245,7 @@ class KomaFlowApp:
 
         参数是**内部键**（``Select`` 的 ``command`` 传回来的就是值本身）。
 
-        用户的原话：磁盘是用户自己的，别替他省，但要提前算出来告诉他。
+        甲方的原话：磁盘是用户自己的，别替他省，但要提前算出来告诉他。
         所以这里不拦、不建议，就是**弹一个窗把数摆清楚**；
         盘不够时 ``describe()`` 里会自己带上"还差多少、怎么办"。
         """
@@ -1271,6 +1271,10 @@ class KomaFlowApp:
         """环境面板收起时显示什么 —— 一句话说清"能不能开工"。"""
         probed = getattr(self, "_blender_probed", [])
         base = env_picker.summary_of(probed, self.vars["blender"].get())
+        # 这一行只有 ~350px：去掉版本号，给 FFmpeg 状态留位置，否则会被界面截成
+        # "✓ 可用（Blender 5.2.3 LTS）· FFr" 这种半截话
+        if base.startswith("✓ 可用"):
+            base = "✓ 可用"
         base += " · FFmpeg " + ("✗" if self._ffmpeg_missing() else "✓")
         return base
 
@@ -1354,7 +1358,7 @@ class KomaFlowApp:
 
         ⚠️ **中间那一段必须能滚**。展开「更多设置」之后总高度会超过窗口，
         底部内容（取景范围那些）直接被切掉、还够不着 ——
-        用户截图里"取景范围"只露出半截字就是这么来的。
+        甲方截图里"取景范围"只露出半截字就是这么来的。
         所以套一层 ``Canvas`` + 竖向滚动条，内容比可视区高时就能滚。
         助手卡和输出预估**不参与滚动**：一个要一直看得见，一个是贴底的结论。
         """
@@ -1555,7 +1559,7 @@ class KomaFlowApp:
         name_label = self._label(row, "文件名", width=8)
         name_label.pack(side="left", anchor="w")
         self._entry(row, self.vars["name"], 10).pack(side="left", fill="x", expand=True)
-        # 成片默认跟着**动作名**走（用户要求），用户自己改过就不再覆盖
+        # 成片默认跟着**动作名**走（甲方要求），用户自己改过就不再覆盖
         self.vars["name"].trace_add("write", self._mark_name_touched)
         tip.attach(name_label,
                    "成片叫什么名字（不带扩展名）。\n"
@@ -1874,7 +1878,7 @@ class KomaFlowApp:
         for index, (key, title, subtitle) in enumerate(ZONES):
             # 「动作」卡：**一个框，不显示分类标签**。
             #
-            # ⚠️ 用户要求"无序分类"：
+            # ⚠️ 甲方要求"无序分类"：
             # > 表情和动作可以直接导入不用现在一样分两个吧，毕竟有些作者
             # > 他不写那个是动作哪个是表情
             # > 无序分类
@@ -1918,7 +1922,7 @@ class KomaFlowApp:
 
         # 「渲染模型」—— 独立的一块区域（点开是单独一个窗）。
         #
-        # 用户需求原话：
+        # 甲方需求原话：
         # > 把工作区里的模型渲染能力装进去，让用户不再需要自己打开 Blender
         # > 再导入，记得做独立区域，然后制作完毕后自动导入到流程内的模型区域
         #
@@ -1944,9 +1948,9 @@ class KomaFlowApp:
                  highlightbackground=T.BORDER,
                  highlightcolor=T.NAVY).pack(side="left", ipady=T.S(4))
 
-        # ── 命名（用户要求：右面要有命名框，不动就用默认名 = 动作名去后缀）──
+        # ── 命名（甲方要求：右面要有命名框，不动就用默认名 = 动作名去后缀）──
         #
-        # 用户原话：
+        # 甲方原话：
         # > 这里的右面应该出现一个命名窗口，没动就是显示默认名称
         # >（动作名称不带后缀）
         #
@@ -2124,7 +2128,7 @@ class KomaFlowApp:
         # 「动作」卡是**一个有序列表**，数量不限。
         #
         # ⚠️ 往这张卡上再拖 = **追加**，不再"先清空再按内容归位"。
-        # 用户要的是"可以添加多个"（原来拖第二个会把第一个冲掉，
+        # 甲方要的是"可以添加多个"（原来拖第二个会把第一个冲掉，
         # 而且靠 `_classify_vmd` 猜它是动作还是表情 —— 现在不需要猜了，
         # 全按导入顺序排，谁是什么由 mmd_tools 自己读）。
 
@@ -2166,7 +2170,7 @@ class KomaFlowApp:
         """数一个 .vmd 里各段有多少帧。
 
         **这是"不看文件名也能分清动作和表情"的关键。**
-        用户说得很对："有些作者他不写那个是动作哪个是表情" ——
+        甲方说得很对："有些作者他不写那个是动作哪个是表情" ——
         靠文件名猜（带"表情"两个字）根本不靠谱，同一套素材换个作者就失效。
 
         但 VMD 是**结构化**的：签名之后依次是骨骼帧、表情帧、相机帧，
@@ -2195,7 +2199,7 @@ class KomaFlowApp:
 
         ★ **动作卡里只有一个 vmd 时，它就是"多合一"。**
 
-        用户原话：
+        甲方原话：
 
         > 如果用户只导入一个文件，代表那是多合一，懂我意思吧（除了摄像机）
 
@@ -2221,7 +2225,7 @@ class KomaFlowApp:
         3. 再退回"哪个格还空着"
 
         ⚠️ 光看文件名（``表情``/``morph``/``face``）是不够的 ——
-        用户明确说了有些作者根本不写。
+        甲方明确说了有些作者根本不写。
         """
         parts = self.vmd_parts(path)
         if parts is not None:
@@ -2264,10 +2268,30 @@ class KomaFlowApp:
                 self.transparent.set("开")
                 self._log(f"按「环境」接收 Blender 工程：{path}")
             else:
-                self.vars["blend"].set(path)
-                # 记住"这次确定用这份工程"（下次启动自动填回来）
-                self._remember_model(path)
-                self._log(f"按「已配好的工程」接收：{path}")
+                # 🚨 已经放了场景或动作时，别让这份 .blend 默默把它们顶掉。
+                #
+                # 用户的原话就是「场景导进去出来场景消失了」：
+                # 他把工程 .blend 拖到角色卡，整条路线切成「整份工程」，
+                # 舞台与动作当场失效，看起来就是"东西没了"。
+                # 这时让他自己选，并把两条路的后果写明白。
+                has_context = bool(self.vars["stage"].get().strip()) or bool(
+                    self._motion_paths())
+                use_as_whole = True
+                if has_context:
+                    use_as_whole = messagebox.askyesno(
+                        "这份 .blend 要怎么用？",
+                        "你已经放了场景或动作。\n\n"
+                        "「是」= 当作整份工程：直接渲它，场景和动作不参与\n"
+                        "「否」= 放进「舞台」当场景：角色和动作照常参与")
+                if use_as_whole:
+                    self.vars["blend"].set(path)
+                    # 记住"这次确定用这份工程"（下次启动自动填回来）
+                    self._remember_model(path)
+                    self._log(f"按「已配好的工程」接收：{path}")
+                else:
+                    self.vars["stage"].set(path)
+                    self.transparent.set("开")
+                    self._log(f"按「环境」接收 Blender 工程：{path}（角色与动作照常参与）")
             return
         # 渲好的三视图（PNG）放进「角色模型」卡 = 拿它当参考图。
         #
@@ -2291,7 +2315,7 @@ class KomaFlowApp:
             self.transparent.set("开")
         # 「角色模型」卡被填了 → 记住它（下次打开默认还是这个）。
         # ⚠️ 只记 model / blend 这两条"角色"路线，舞台和镜头不记 ——
-        # 用户说的是"角色板块"。
+        # 甲方说的是"角色板块"。
         if key == "model":
             self._remember_model(path)
 
@@ -2318,7 +2342,7 @@ class KomaFlowApp:
     def _add_motion_file(self, path: str) -> None:
         """往「动作」卡里**追加**一个文件。
 
-        用户要求：
+        甲方要求：
 
         > 这个动作和表情，可以添加多个而不是局限于2个
 
@@ -2454,7 +2478,7 @@ class KomaFlowApp:
             elif codec == "h264":
                 output = "输出：MP4"
             else:
-                # ⚠️ 不再有"垫底色的 MP4"那条附加轨（用户要求选什么出什么），
+                # ⚠️ 不再有"垫底色的 MP4"那条附加轨（甲方要求选什么出什么），
                 # 所以这里只报一条。原来写「透明 MOV + MP4」会把用户误导成
                 # "会多给我一个文件"（实测界面截图里就露着这句）。
                 output = "输出：透明 MOV"
@@ -2477,7 +2501,7 @@ class KomaFlowApp:
     def _sync_still_name_default(self) -> None:
         """「命名」框空着时，把默认名（动作名去后缀）**显示**出来。
 
-        用户原话：
+        甲方原话：
 
         > 这里的右面应该出现一个命名窗口，没动就是显示默认名称
         >（动作名称不带后缀）
@@ -2524,7 +2548,7 @@ class KomaFlowApp:
     def _default_output_name(self) -> str:
         """成片默认名：第一个动作文件名去后缀。
 
-        用户说得对：
+        甲方说得对：
 
         > 视频命名并未按照动作名称生效
 
@@ -2663,7 +2687,7 @@ class KomaFlowApp:
             # frame_done 是整片的已完成帧数，减去本批起点就是**本批**渲了多少
             local = max(0, min(expected, int(done) - start))
             note = f"渲染中 {local} / {expected} 张"
-            # ── 用户要求：这里要告诉用户「多少秒一帧」和「还要多久」──
+            # ── 甲方要求：这里要告诉用户「多少秒一帧」和「还要多久」──
             #
             # ⚠️ 秒/帧 用的是**最近 10 帧的滑动平均**（渲染脚本算好的
             # ``seconds_per_frame_10``），不是总平均：总平均会被头几帧的
@@ -2749,7 +2773,7 @@ class KomaFlowApp:
         ``.blend`` 会直接塞进 ``vars["model"]`` —— 而 ``vars["blend"]`` 还是空的，
         ``route`` 就仍然是 ``assets``，build.py 拿 PMX 导入器去读 .blend，
         报「File signature is invalid.」。**拖放有分岔、点选没有**，
-        同一个动作两条路结果不一样（用户就是这么踩到"不能渲染"的）。
+        同一个动作两条路结果不一样（甲方就是这么踩到"不能渲染"的）。
 
         现在统一交给 :meth:`_assign` —— 它负责 ``.blend`` 那套"环境 / 整份工程"
         的分岔。**别再绕过它直接写 vars。**
@@ -2932,7 +2956,7 @@ class KomaFlowApp:
 
         原来这条走的是素材那条 ``_browse_into`` → ``_assign``，
         只把路径塞进 ``vars["blender"]``：既不落设置，也不触发重新探测，
-        所以选完界面上还是"没找到 Blender"（用户报的就是这个）。
+        所以选完界面上还是"没找到 Blender"（甲方报的就是这个）。
         """
         path = filedialog.askopenfilename(
             title="选择 blender.exe",
@@ -2996,7 +3020,7 @@ class KomaFlowApp:
         # 小字，用户点开始渲染后才会撞上一个看不懂的错。
         # 这里**在还没开始渲的时候把话说清楚**，并给一条能走的路。
         # ⚠️ 先记下"这一轮到底算不算首次启动" —— 下面可能把它标记成走完了。
-        # 首次启动的最后一步是**自检结果窗**（用户要的"选完版本然后自检"），
+        # 首次启动的最后一步是**自检结果窗**（甲方要的"选完版本然后自检"），
         # 它得按这个判断弹；不看这里的话，标记一改就永远弹不出来了。
         first_run_pending = not getattr(self.settings, "first_run_done", False)
 
@@ -3064,7 +3088,7 @@ class KomaFlowApp:
 
         两个动作：
         * **下载并安装（需要联网）** —— 调 Blender 自己的扩展安装操作符。
-          用户定的路线是**不随包分发**，所以这一步必须联网。
+          甲方定的路线是**不随包分发**，所以这一步必须联网。
         * **我已自己装好，重新检测** —— 重跑一遍探测。
 
         :param on_close: 窗关掉时的回调。首次启动用它来收尾
@@ -3145,7 +3169,7 @@ class KomaFlowApp:
     def self_check_facts(self) -> dict:
         """跑一遍自检，把结果整理成**可断言**的一份数据。
 
-        用户要的流程是「第一次启动会引导到选择版本，**然后自检**」：
+        甲方要的流程是「第一次启动会引导到选择版本，**然后自检**」：
         选完版本得能看到"到底行不行"。这里就是那份结论 ——
         界面（:meth:`_offer_self_check`）与自检脚本都读它，
         **不在两处各算一套**。
@@ -3617,6 +3641,22 @@ class KomaFlowApp:
         if model and model.lower().endswith(".blend") and not blend:
             blend, model = model, ""
             self._log(f"「{os.path.basename(blend)}」是 .blend，按整份工程处理。", "warn")
+            # ⚠️ 用户报过「场景导进去就消失了」「动作导进去就消失了」，根因就是这一跳：
+            # 角色卡放的是 .blend 时整条路线变成「整份工程」——
+            # build.py 那条路**不导入舞台、也不按动作重排相机**，
+            # 于是用户明明放了场景和动作，出片里却两样都没有。
+            # 不拦他（那是合法用法），但必须当场说清楚缺了什么。
+            if self.vars["stage"].get().strip() or self._motion_paths():
+                dropped = []
+                if self.vars["stage"].get().strip():
+                    dropped.append("场景（舞台）")
+                if self._motion_paths():
+                    dropped.append("动作")
+                note = ("当前是「整份工程」模式：" + "、".join(dropped) +
+                        " 不会参与渲染。想让它们生效，把角色卡里的 .blend 换成 .pmx"
+                        "（.blend 只放「舞台」卡当场景）。")
+                self._log(note, "warn")
+                self.vars["status"].set(note)
         project = Project(
             name=name,
             inputs=Inputs(
@@ -3665,7 +3705,7 @@ class KomaFlowApp:
     def _log(self, message: str, level: str = "info") -> None:
         """**界面不显示日志** —— 全丢给后台文件，需要排查时再去看。
 
-        用户口径：用户只需要看到"步骤走到哪"和"一句话报错"。
+        甲方口径：用户只需要看到"步骤走到哪"和"一句话报错"。
         """
         JOURNAL.write(message, level)
 
@@ -3696,7 +3736,7 @@ class KomaFlowApp:
         改回来** —— 于是点过一次「开始渲染」之后，拖放、点卡片选文件全被
         ``if self.mode == "run": return`` 挡掉，**改不了素材**。
         而渲染失败走的是 ``_fail()``，它连 ``_set_busy(False)`` 都不调，
-        锁得更死。用户报的"失败时无法更改文件"就是这个。
+        锁得更死。甲方报的"失败时无法更改文件"就是这个。
 
         ⚠️ 这里**只复位 mode、不重画卡片**：重画会把刚标好的"失败"擦掉，
         用户就看不到是哪一步挂了。卡片什么时候回投放态，由
@@ -3793,7 +3833,7 @@ class KomaFlowApp:
     def on_assemble(self) -> None:
         """「组装为工程」—— 不渲片，只把素材组装成一份 Blender 工程交给用户。
 
-        用户原话：
+        甲方原话：
 
         > 左上角生成视频旁边留出一个把所有东西组装在一起的 Blender 格式的选择
         > 给用户，也就是最终文件，以供用户自己微调更改。
@@ -4244,7 +4284,7 @@ class KomaFlowApp:
 
         ⚠️ 原来这里**压根没调 ``_set_busy(False)``**，而它是唯一复位 ``mode`` 的
         地方 —— 于是渲染一失败，素材就再也改不了（拖放、点卡片都被
-        ``mode == "run"`` 挡住），只能重启程序。用户报过。
+        ``mode == "run"`` 挡住），只能重启程序。甲方报过。
         """
         self._set_busy(False)
         self.started_at = None
@@ -4329,7 +4369,7 @@ class KomaFlowApp:
         #
         # ⚠️ **吉祥物不能只画在空态里。** 它原来被套在
         # ``if self._preview_source is None:`` 里面，于是**一渲出单帧预览，
-        # 右下角的立绘就没了**（用户报的"右面的吉祥物怎么丢了"）。
+        # 右下角的立绘就没了**（甲方报的"右面的吉祥物怎么丢了"）。
         # 现在挪到分支外面：空态和有预览时都画。
         mascot = ui_assets.mascot_normal() or ui_assets.mascot()
         self._mascot_column = 0
@@ -4340,7 +4380,7 @@ class KomaFlowApp:
         if self._preview_source is None:
             # ⚠️ **水印和引导卡不同时出现。** 水印画在 x≈30% 宽处、引导卡居中且很宽，
             # 两个一起画就会叠在一起 —— 引导卡左边露出水印那个白圆，
-            # 看着像界面坏了（用户截图里就是这样）。
+            # 看着像界面坏了（甲方截图里就是这样）。
             # 空态真正要传达的信息都在引导卡上，水印在这儿只是噪音，所以空态不画。
             card_top = T.S(12)
             card_h = max(T.S(196), band_y1 - T.S(12) - card_top)
@@ -4365,7 +4405,7 @@ class KomaFlowApp:
         ⚠️ **必须用独立的 tag ``"mascot"``，不能塞进 ``"hint"``。**
         ``_show_preview`` 里有一句 ``canvas.delete("hint")`` ——
         立绘如果挂在 ``"hint"`` 上，**一渲出单帧预览就被删掉了**
-        （用户报的"右面的吉祥物怎么丢了"）。独立 tag 之后，
+        （甲方报的"右面的吉祥物怎么丢了"）。独立 tag 之后，
         预览的增删与立绘互不影响。
         """
         target = min(T.S(252), round((height - T.S(24)) * 0.75))
@@ -4454,7 +4494,7 @@ class KomaFlowApp:
         # 用户第一次打开，最先看到的应该是"这东西能帮我做什么"；
         # 具体怎么做交给下面那三步。
         #
-        # ⚠️ 也别写"片子"。"做一条片子"是片场行话，用户直接问"片子…吗？" ——
+        # ⚠️ 也别写"片子"。"做一条片子"是片场行话，甲方直接问"片子…吗？" ——
         # 普通人说的是"视频"。用户可见的文案里一律用「视频」。
         canvas.create_text(x, top + T.S(30), text="把 MMD 模型渲成视频", anchor="w",
                            fill=T.TEXT, font=T.pick_font(13, bold=True),
@@ -4575,9 +4615,22 @@ class KomaFlowApp:
         # 源 PMX 只在两种情况下留着用：没有 .blend，或者用户直接拖了 PMX。
         pmx_candidate = Path(source_pmx) if source_pmx else None
         blend_candidate = Path(path) if Path(path).suffix.lower() == ".blend" else None
-        if blend_candidate is not None and blend_candidate.is_file():
-            look_blend = blend_candidate
+        # 🚨 **优先用源 PMX，不是那份 .blend。**
+        #
+        # 用户报的原话：「动作导进去出来动作消失了，场景导进去出来场景消失了」。
+        # 查日志根因：这里原来把「渲染模型」存出的 .blend 塞进角色卡，
+        # 而角色卡一旦是 .blend，整条流程就切到「整份工程」路线 ——
+        # 那条路线不导入舞台、相机也不跟着动作走，于是场景和动作双双"消失"。
+        # .blend 只作为**观感来源**（材质已经调好的那套），角色本体仍用 PMX。
+        if pmx_candidate is not None and pmx_candidate.is_file():
+            path = pmx_candidate
+            look_blend = (blend_candidate
+                          if blend_candidate is not None and blend_candidate.is_file()
+                          else None)
+        elif blend_candidate is not None and blend_candidate.is_file():
+            # 拿不到源 PMX（比如用户直接拖了一个 .blend 来渲）才退回整份工程
             path = blend_candidate
+            look_blend = blend_candidate
         else:
             look_blend = None
             path = Path(path)

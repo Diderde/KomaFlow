@@ -78,7 +78,7 @@ def make_sink(on_event: Callable[[dict], None] | None,
               journal: Journal = JOURNAL) -> Callable[[dict], None]:
     """给事件流加一层"落盘"。
 
-    用户口径：**日志不给用户看**。所以界面只收「步骤 / 进度 / 一句人话报错」，
+    甲方口径：**日志不给用户看**。所以界面只收「步骤 / 进度 / 一句人话报错」，
     完整技术记录在这里统一写进文件。
 
     progress 事件刻意**不落盘** —— 一段 1000 帧会打 40 条，纯噪音。
@@ -177,7 +177,7 @@ def render_fingerprint(project: Project, report: dict) -> str:
 
     🚨 **为什么必须有这个东西**
 
-    用户报的现象：
+    甲方报的现象：
 
     > 输出的视频依旧是同一个样子，而且瞬间完成，是不是压根没跑，
     > 单纯是把之前的视频复制了一份当成新的了
@@ -244,7 +244,7 @@ def invalidate_stale_segments(
     """指纹变了就把旧段产物全删掉，并记下新指纹。
 
     不删会怎么样：``plan_run`` 会把它们判成"已完成"直接跳过 ——
-    那正是用户看到的"瞬间完成、画面没变"。
+    那正是甲方看到的"瞬间完成、画面没变"。
 
     返回 ``{"changed": bool, "removed": int}``。
     """
@@ -497,7 +497,7 @@ def run_project(
                   message="输出格式：PNG 图片序列（只出图，不编码视频，不需要 FFmpeg）")
         if transparent:
             # ⚠️ 只说"出一条"，不再提"另外垫一条 MP4" —— 那条已去掉，
-            # 用户选什么就出什么（用户要求，见 _encode_png_tracks 的说明）。
+            # 用户选什么就出什么（甲方要求，见 _encode_png_tracks 的说明）。
             _emit(on_event, "log", level="info",
                   message=("透明背景：分段产物改为 PNG 序列（RGBA），"
                            f"成片是「{alpha_codec}」的 MOV"))
@@ -537,7 +537,7 @@ def run_project(
         # 🚨 **先按内容指纹作废旧段**，再排计划。
         # 顺序不能反：要是先排了计划，旧段会被判成"已完成"直接跳过，
         # 最后 concat 只是把上一次的段拷成新文件名 ——
-        # 那就是用户报的"瞬间完成、画面还是同一个"
+        # 那就是甲方报的"瞬间完成、画面还是同一个"
         # （详见 render_fingerprint 的说明）。
         result.fingerprint = render_fingerprint(project, report)
         invalidation = invalidate_stale_segments(
@@ -857,7 +857,7 @@ def _assembly_fingerprint(build_spec: dict) -> str:
 
     为什么要单独算：用户改「渲哪一段」或「出多大」，物理一个字都不用变；
     原来整份 ``build_spec`` 一起比，改个区间就重新 build_rig + 烘焙，
-    白等几分钟（用户原话："也不用重新跑物理"）。
+    白等几分钟（甲方原话："也不用重新跑物理"）。
     """
     relevant = {k: v for k, v in build_spec.items() if k not in _RENDER_ONLY_KEYS}
     blob = json.dumps(relevant, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -906,7 +906,7 @@ def _prepare_and_assemble(
 
     # 🚨 FFmpeg 预检：视频输出要靠它拼接与校验。
     #    以前不查，等渲了几百帧、走到"读产物"才炸，用户白等几十分钟
-    #    （用户那边真机报过：586/1000 帧才弹"找不到 ffmpeg"）。
+    #    （甲方那边真机报过：586/1000 帧才弹"找不到 ffmpeg"）。
     #    只要图片序列就不需要 FFmpeg，所以先算清输出形态再决定查不查。
     # 🚨 FFmpeg 只在两种情况下必须要：透明 MOV、多段拼接。
     #    MP4 单段输出用 Blender 内置 ffmpeg 就够了 —— 缺 FFmpeg 时降级为单段，
@@ -956,7 +956,7 @@ def _prepare_and_assemble(
         "progress": str(work_dir / "build_progress.json"),
         # 🚨 **装配脚本自身的指纹。**
         #
-        # 用户报「物理依旧未启动」，根子就在这里：复用判据只比 build_spec
+        # 甲方报「物理依旧未启动」，根子就在这里：复用判据只比 build_spec
         # （素材路径与参数），**不看装配脚本本身变没变**。于是脚本加了
         # build_rig + 物理烘焙之后，旧的 work.blend 仍被当成「素材没变」直接
         # 复用 —— 那里面根本没有刚体约束，也没有烘焙缓存。
@@ -971,7 +971,7 @@ def _prepare_and_assemble(
 
     # ── 非临时工程文件（分段渲染的落点）──
     #
-    # 用户要求：「确认开始渲染，先把文件存下来（非临时），之后在文件里分段渲，
+    # 甲方要求：「确认开始渲染，先把文件存下来（非临时），之后在文件里分段渲，
     # 不用重跑物理」。所以装配完就把它复制到**出图目录**，并在旁边放一份指纹，
     # 下次（包括只改渲染区间）直接用它，不再 build_rig / 烘焙。
     durable_blend, durable_key = _durable_paths(project)
@@ -1154,6 +1154,21 @@ def _collect_report_notes(project: Project, report: dict, result: "RunResult", o
         _emit(on_event, "log", level="info",
               message=f"骨骼匹配 {coverage.get('matched')}/{coverage.get('vmd_unique_bones')}"
                       f"（{coverage.get('coverage'):.0%}）；缺的多为该模型没有的裙骨/饰品骨")
+        # 🚨 匹配率过低时**必须升级成警告**。
+        #
+        # 用户报「动作导进去出来动作消失了」—— 其中一次的真因就是这个：
+        # 角色卡里放的是一份三视图 .blend（骨骼命名跟动作对不上），
+        # 匹配只有 22%，出片里人物几乎不动，看着就像"动作没了"。
+        # 只打一行 info 没人看得见，这里把它变成显式警告。
+        rate = float(coverage.get("coverage") or 0.0)
+        if rate < 0.6 and (coverage.get("vmd_unique_bones") or 0) >= 20:
+            note = (f"动作和模型的骨骼只对上了 {rate:.0%}"
+                    f"（{coverage.get('matched')}/{coverage.get('vmd_unique_bones')}）"
+                    " —— 出片里大部分部位不会动。"
+                    "多半是「角色模型」卡里放的是一份 .blend（或换过模型），"
+                    "请改用这个角色原本的 .pmx。")
+            result.warnings.append(note)
+            _emit(on_event, "log", level="warn", message=note)
 
     textures = report.get("textures") or {}
     for item in textures.get("missing", []):
@@ -1171,7 +1186,7 @@ def _collect_report_notes(project: Project, report: dict, result: "RunResult", o
 def default_still_name(project: Project, frame: int) -> str:
     """单帧预览的**默认名字**：动作文件名去掉后缀。
 
-    用户要求：
+    甲方要求：
 
     > 这里的右面应该出现一个命名窗口，没动就是显示默认名称（动作名称不带后缀）
 
@@ -1224,7 +1239,7 @@ def render_still(
 
     ⚠️ 产物落在**输出目录**（用户找得到的地方），不再只塞在 ``work/preview``
        里面。原来固定叫 ``still_<帧号>.png`` 藏在中间产物目录 ——
-       名字不是用户的、位置他也找不到，用户直接问"这不是我导入的"。
+       名字不是用户的、位置他也找不到，甲方直接问"这不是我导入的"。
     """
     work_dir = Path(work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -1280,7 +1295,7 @@ def render_still(
 
     if not output.is_file():
         # 🚨 **先看是不是用户按了终止。**
-        # 用户报「渲完模型之后单帧渲染的图片无法查看」，日志里其实是：
+        # 甲方报「渲完模型之后单帧渲染的图片无法查看」，日志里其实是：
         # 17:58:16 已请求终止 → 17:58:17 still 阶段照样跑 → 报「素材损坏」。
         # 把"用户取消"说成"素材损坏"是谎报，会把人带去查模型文件。
         if cancel is not None and cancel.is_set():
@@ -1379,7 +1394,7 @@ def _render_one_segment(
 
         def on_progress(payload, index=index, segment=segment, done_before=done_before):
             frames_done = done_before + int(payload.get("frames_done") or 0)
-            # ⚠️ 优先用**最近 10 帧的滑动平均**（用户要的显示口径）：
+            # ⚠️ 优先用**最近 10 帧的滑动平均**（甲方要的显示口径）：
             # 总平均（elapsed/done）会被头几帧的着色器编译开销拉高，
             # 遇到复杂帧又反应迟钝，ETA 会一直骗人。
             per_frame = payload.get("seconds_per_frame_10") \
@@ -1466,7 +1481,7 @@ def _render_one_segment(
 def unique_output_path(target: Path) -> Path:
     """给成片找一个**不会覆盖已有文件**的路径。
 
-    用户报过：渲一次把上一次的作品顶掉了。原因就是成片文件名固定是
+    甲方报过：渲一次把上一次的作品顶掉了。原因就是成片文件名固定是
     ``<工程名>.mov``，同一个工程渲两遍自然就覆盖。
 
     做法：``名字.mov`` 被占了就试 ``名字 (2).mov``、``名字 (3).mov`` …
@@ -1534,7 +1549,7 @@ def _encode_png_tracks(
 
     🚨 **用户选什么就出什么，不再额外追加 MP4。**
        原来在透明路径上会额外编一条"垫深褐色的 MP4"（``points_possible``），
-       理由是"方便直接发给别人看"。用户明确要求：
+       理由是"方便直接发给别人看"。甲方明确要求：
 
        > 用户选择什么就输出什么，不用明明选择 MOV 还额外追加 MP4，浪费资源。
 
@@ -1556,7 +1571,7 @@ def _encode_png_tracks(
 
     # 🚨 **编码阶段必须有进度反馈。**
     #
-    # 用户报的"渲到 300/300 之后一直不结束、然后突然提示完成"就是这里：
+    # 甲方报的"渲到 300/300 之后一直不结束、然后突然提示完成"就是这里：
     # 帧渲完之后还要把 PNG 序列逐段编成 MOV、再流拷贝拼接 ——
     # 2K 的长片这一步要几分钟，而界面上进度条早就 100% 了、什么都不会动，
     # 看着就像挂了。所以这里按段报进度，让它"有动静"。

@@ -1,6 +1,6 @@
 """回归：**点卡片选文件**和**拖放文件**必须走同一套归类。
 
-用户踩到的坑
+甲方踩到的坑
 ------------
 第 1 张卡（角色模型 / 工程）支持 ``.blend``，但 ``.blend`` 有**两种含义**：
 
@@ -76,7 +76,7 @@ class TestBlendRouting(unittest.TestCase):
         self.assertEqual(self.app.vars["blend"].get(), "")
 
     def test_browse_blend_on_model_card_goes_to_blend(self):
-        """**这条就是用户踩到的那个 bug。**"""
+        """**这条就是甲方踩到的那个 bug。**"""
         self._clear()
         with mock.patch("komaflow.ui.app.filedialog.askopenfilename",
                         return_value=r"<示例>\示例模型.blend"):
@@ -136,6 +136,31 @@ class TestBlendRouting(unittest.TestCase):
         self.app._set_motion_paths([r"<样例>\a.vmd", r"<样例>\b.vmd", r"<样例>\c.vmd"])
         self.app._remove_motion_file(1)
         self.assertEqual(self.app._motion_paths(), [r"<样例>\a.vmd", r"<样例>\c.vmd"])
+
+
+    def test_blend_on_model_card_asks_when_context_exists(self):
+        """已经放了场景/动作时，拖 .blend 到角色卡要先问，别默默顶掉。
+
+        用户报的原话：「场景导进去出来场景消失了」—— 就是被默默顶掉的。
+        """
+        self._clear()
+        self.app.vars["stage"].set(r"<样例>\场景.blend")
+        with mock.patch("komaflow.ui.app.messagebox.askyesno",
+                        return_value=False) as ask:
+            self.app._assign("model", r"<样例>\角色.blend")
+        self.assertTrue(ask.called, "有场景在时要问一句")
+        self.assertEqual(self.app.vars["stage"].get(), r"<样例>\角色.blend",
+                         "选「否」→ 放进舞台当场景")
+        self.assertEqual(self.app.vars["blend"].get(), "")
+
+    def test_blend_on_model_card_keeps_whole_project_when_confirmed(self):
+        self._clear()
+        self.app.vars["stage"].set(r"<样例>\场景.blend")
+        with mock.patch("komaflow.ui.app.messagebox.askyesno",
+                        return_value=True):
+            self.app._assign("model", r"<样例>\角色.blend")
+        self.assertEqual(self.app.vars["blend"].get(), r"<样例>\角色.blend")
+        self.assertEqual(self.app.vars["stage"].get(), r"<样例>\场景.blend")
 
 
 if __name__ == "__main__":

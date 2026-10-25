@@ -298,7 +298,7 @@ class TestModelCardAcceptsPng(_WindowCase):
 class TestRenderWindowRemembersPaths(_WindowCase):
     """「渲染模型」窗要记住上次的**模型文件**与**出图目录**。
 
-    用户要求：
+    甲方要求：
       > 这个模型文件位置也保留成最近一次用户的位置
 
     ⚠️ 这里记的跟主流程角色卡的记忆（``last_model``）**是两套** ——
@@ -367,6 +367,71 @@ class TestRenderWindowRemembersPaths(_WindowCase):
         self.assertEqual(saved.last_render_model, model)
         self.assertEqual(saved.last_model, "",
                          "渲三视图不该动「整片要用的角色」那条记忆")
+
+
+class TestModelRenderKeepsPmx(_WindowCase):
+    """渲完三视图后，角色卡要留 **PMX**，而不是那份三视图 .blend。
+
+    用户报的原话：
+
+    > 动作导进去出来动作消失了，场景导进去出来场景消失了
+
+    查日志根因：``accept_model_render`` 把「渲染模型」存出的 .blend 塞进角色卡，
+    角色卡一旦是 .blend，整条流程就切成「整份工程」路线 —— 那条路不导入舞台、
+    骨骼命名也对不上动作（实测匹配只有 22%），于是场景和动作双双"消失"。
+
+    .blend 只该当**观感来源**，角色本体仍用 PMX。
+    """
+
+    def _files(self):
+        pmx = self.tmp / "角色.pmx"
+        pmx.write_bytes(b"pmx")
+        blend = self.tmp / "角色.blend"
+        blend.write_bytes(b"BLENDER")
+        return pmx, blend
+
+    def test_pmx_stays_in_card_and_blend_becomes_look_source(self):
+        pmx, blend = self._files()
+        self.app.accept_model_render(blend, [], source_pmx=str(pmx))
+        self.root.update()
+
+        self.assertEqual(self.app.vars["model"].get(), str(pmx),
+                         "角色卡必须是 PMX，否则 route 会切成整份工程")
+        self.assertEqual(self.app.vars["blend"].get(), "",
+                         "不该顺手把 blend 也填上（那会直接走整份工程）")
+        self.assertEqual(Settings.load().last_look_blend, str(blend),
+                         "那份 .blend 要留下当观感来源")
+
+    def test_without_pmx_falls_back_to_blend(self):
+        _pmx, blend = self._files()
+        self.app.accept_model_render(blend, [], source_pmx="")
+        self.root.update()
+        self.assertEqual(self.app.vars["model"].get(), str(blend),
+                         "拿不到源 PMX 时只能退回整份工程")
+
+
+class TestWholeProjectModeSaysWhatItDrops(_WindowCase):
+    """角色卡是 .blend 时，必须**当场说清**场景/动作不参与。"""
+
+    def _blend(self):
+        path = self.tmp / "工程.blend"
+        path.write_bytes(b"BLENDER")
+        return path
+
+    def test_status_mentions_dropped_assets(self):
+        blend = self._blend()
+        motion = self.tmp / "动作.vmd"
+        motion.write_bytes(b"Vocaloid Motion Data")
+        self.app._set_motion_paths([str(motion)])
+        self.app.vars["stage"].set(str(self.tmp / "场景.blend"))
+        self.app.vars["model"].set(str(blend))
+
+        project = self.app._collect_project()
+
+        self.assertEqual(project.inputs.route, "blend")
+        status = self.app.vars["status"].get()
+        self.assertIn("整份工程", status)
+        self.assertIn("不会参与渲染", status)
 
 
 if __name__ == "__main__":
