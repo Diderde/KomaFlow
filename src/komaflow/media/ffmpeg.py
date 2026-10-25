@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 import sys
 import tempfile
 from pathlib import Path
@@ -29,6 +30,25 @@ ENV_FFMPEG = "KomaFlow_FFMPEG"
 
 #: 单条命令的超时（秒）。拼接与探测都很快，超过就是出问题了。
 DEFAULT_TIMEOUT = 180
+
+#: A7：编码的超时必须**按规模算**，不能恒 180 秒。
+#:
+#: 实测 ProRes 4:4:4 2K 是 67 ms/帧 —— 180 秒只够 2668 帧；
+#: 慢 3~5 倍的机器上 500~900 帧就撞顶，然后被当成"编码失败"。
+ENCODE_SECONDS_PER_FRAME = 2.0      # 每帧预留 2 秒（慢机也够）
+PROBE_TIMEOUT = 120.0               # ffprobe 只读头部/数帧，不需要很久
+
+
+def encode_timeout(frame_count: int | None) -> float:
+    """按帧数算编码超时（下限 600 秒）。"""
+    frames = max(int(frame_count or 0), 0)
+    return max(600.0, frames * ENCODE_SECONDS_PER_FRAME)
+
+
+def concat_timeout(part_count: int | None) -> float:
+    """流拷贝拼接：与段数相关，跟体积无关（没有重编码）。"""
+    parts = max(int(part_count or 0), 1)
+    return max(300.0, parts * 120.0)
 
 
 def _no_window() -> dict:
@@ -116,7 +136,8 @@ def find_ffmpeg(ffmpeg: str | Path | None = None) -> tuple[Path, Path]:
     return ffmpeg_path, ffprobe_path
 
 
-def probe_video(path: str | Path, ffprobe: str | Path | None = None) -> VideoInfo:
+def probe_video(path: str | Path, ffprobe: str | Path | None = None,
+                *, cancel=None) -> VideoInfo:
     """探测视频的帧数、时长与帧率（FR-8.4 的判定依据）。
 
     :raises KomaFlowError: 读不出来（文件损坏或不是视频）
@@ -134,22 +155,18 @@ def probe_video(path: str | Path, ffprobe: str | Path | None = None) -> VideoInf
         "-of", "json",
         str(target),
     ]
-    try:
-        completed = subprocess.run(
-            command, capture_output=True, text=True, timeout=DEFAULT_TIMEOUT,
-            encoding="utf-8", errors="replace", **_no_window(),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise KomaFlowError(ErrorKind.ASSET_CORRUPT, detail=f"探测超时：{target}") from exc
-
-    if completed.returncode != 0:
+    code, stdout, stderr, cancelled = _spawn(
+        command, what="探测", timeout=PROBE_TIMEOUT, cancel=cancel)
+    if cancelled:
+        raise KomaFlowError(ErrorKind.USER_CANCELLED)
+    if code != 0:
         raise KomaFlowError(
             ErrorKind.ASSET_CORRUPT,
-            detail=f"ffprobe 返回 {completed.returncode}：{completed.stderr.strip()[:200]}",
+            detail=f"ffprobe 返回 {code}：{stderr.strip()[:200]}",
         )
 
     try:
-        payload = json.loads(completed.stdout)
+        payload = json.loads(stdout)
         stream = payload["streams"][0]
     except (ValueError, KeyError, IndexError) as exc:
         raise KomaFlowError(ErrorKind.ASSET_CORRUPT, detail=f"无法解析探测结果：{target}") from exc
@@ -169,6 +186,50 @@ def probe_video(path: str | Path, ffprobe: str | Path | None = None) -> VideoInf
     )
 
 
+def _spawn(command: list[str], *, what: str, timeout: float | None = None,
+           cancel=None) -> tuple[int, str, str, bool]:
+    """跑一条外部命令，**可以取消**，超时按调用方给的秒数。
+
+    为什么不用 ``subprocess.run(timeout=...)``：
+    它一堵到底 —— 用户在这期间点"终止"完全没反应（编码/拼接能跑几十秒到几分钟）。
+    这里改成 ``Popen`` + 轮询，每 0.2 秒看一眼取消标志。
+
+    返回 ``(returncode, stdout, stderr, cancelled)``。超时会直接抛。
+    """
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", **_no_window())
+    started = time.time()
+    while True:
+        code = process.poll()
+        if code is not None:
+            out, err = process.communicate()
+            return code, out or "", err or "", False
+        if cancel is not None and cancel.is_set():
+            _kill_tree(process)
+            out, err = process.communicate()
+            return -1, out or "", err or "", True
+        if timeout is not None and (time.time() - started) > timeout:
+            _kill_tree(process)
+            out, err = process.communicate()
+            raise KomaFlowError(
+                ErrorKind.ASSET_CORRUPT,
+                detail=f"{what}超时（超过 {int(timeout)} 秒）")
+        time.sleep(0.2)
+
+
+def _kill_tree(process: subprocess.Popen) -> None:
+    """连子进程一起收（Windows 上 ffmpeg 会 fork 出编码线程/子进程）。"""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                           capture_output=True, check=False)
+        else:
+            process.kill()
+    except Exception: # noqa: BLE001 - 收尾阶段不抛
+        pass
+
+
 def _parse_rate(rate: str) -> float:
     """把 ffprobe 的 ``"30/1"`` 解析成 30.0。"""
     try:
@@ -181,25 +242,31 @@ def _parse_rate(rate: str) -> float:
         return 0.0
 
 
-def _run(command: list[str], *, what: str, timeout: int = DEFAULT_TIMEOUT) -> None:
+def _run(command: list[str], *, what: str, timeout: float = DEFAULT_TIMEOUT,
+         cancel=None) -> None:
     """跑一条 ffmpeg 命令，非零退出就报人话错。
 
     ffmpeg 的报错信息在 stderr 最后几行，截 300 字够定位了（完整的看日志文件）。
     """
-    try:
-        completed = subprocess.run(
-            command, capture_output=True, text=True, timeout=timeout,
-            encoding="utf-8", errors="replace", **_no_window(),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise KomaFlowError(ErrorKind.ASSET_CORRUPT,
-                          detail=f"{what}超时（超过 {timeout} 秒）") from exc
-    if completed.returncode != 0:
+    code, _out, stderr, cancelled = _spawn(
+        command, what=what, timeout=timeout, cancel=cancel)
+    if cancelled:
+        raise KomaFlowError(ErrorKind.USER_CANCELLED)
+    if code != 0:
         raise KomaFlowError(
             ErrorKind.ASSET_CORRUPT,
-            detail=f"{what}失败（{completed.returncode}）："
+            detail=f"{what}失败（{code}）："
                    f"{completed.stderr.strip()[-300:]}",
         )
+
+
+def _count_png_frames(directory: Path, prefix: str) -> int:
+    """数一下 PNG 序列有多少张（只为算超时，读目录即可）。"""
+    try:
+        return sum(1 for p in directory.glob("*.png")
+                   if not prefix or p.name.startswith(prefix))
+    except OSError:
+        return 0
 
 
 def _frame_pattern(directory: Path, prefix: str) -> str:
@@ -230,6 +297,8 @@ def encode_mov_alpha(
     fps: int = 30,
     codec: str = "prores",
     ffmpeg: str | Path | None = None,
+    cancel=None,
+    timeout: float | None = None,
 ) -> Path:
     """把 PNG 序列编成**带 alpha 通道的 MOV**（主交付）。
 
@@ -256,7 +325,10 @@ def encode_mov_alpha(
                     "-pix_fmt", "yuva444p10le"]
     command.append(str(target))
 
-    _run(command, what="透明 MOV 编码")
+    # A7：超时按帧数算，不再恒 180 秒
+    frames = _count_png_frames(Path(directory), prefix)
+    _run(command, what="透明 MOV 编码",
+         timeout=timeout or encode_timeout(frames), cancel=cancel)
     return target
 
 
@@ -264,6 +336,7 @@ def concat_streams(
     parts: list[str | Path],
     output: str | Path,
     ffmpeg: str | Path | None = None,
+    cancel=None,
 ) -> Path:
     """流拷贝拼接（不重编码），容器由输出扩展名决定。
 
@@ -297,7 +370,7 @@ def concat_streams(
             "-c", "copy",
             str(target),
         ]
-        _run(command, what="分段拼接")
+        _run(command, what="分段拼接", cancel=cancel)
     finally:
         list_path.unlink(missing_ok=True)
 
@@ -308,6 +381,7 @@ def concat_segments(
     parts: list[str | Path],
     output: str | Path,
     ffmpeg: str | Path | None = None,
+    cancel=None,
 ) -> Path:
     """把各段**流拷贝**拼成一个成片（K-2.10：不重编码）。
 
@@ -338,14 +412,14 @@ def concat_segments(
             "-c", "copy",
             str(target),
         ]
-        completed = subprocess.run(
-            command, capture_output=True, text=True, timeout=DEFAULT_TIMEOUT,
-            encoding="utf-8", errors="replace", **_no_window(),
-        )
-        if completed.returncode != 0:
+        code, _out, stderr, cancelled = _spawn(
+            command, what="拼接", timeout=concat_timeout(len(parts)), cancel=cancel)
+        if cancelled:
+            raise KomaFlowError(ErrorKind.USER_CANCELLED)
+        if code != 0:
             raise KomaFlowError(
                 ErrorKind.ASSET_CORRUPT,
-                detail=f"拼接失败（{completed.returncode}）：{completed.stderr.strip()[:300]}",
+                detail=f"拼接失败（{code}）：{stderr.strip()[:300]}",
             )
     finally:
         list_path.unlink(missing_ok=True)

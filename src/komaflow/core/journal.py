@@ -66,6 +66,35 @@ class Journal:
     def directory(self) -> Path | None:
         return self._directory
 
+    #: 单个日志文件的上限；超了就切成 .1 / .2 / .3（最多留 3 份）
+    MAX_BYTES = 5 * 1024 * 1024
+    KEEP = 3
+
+    def _rotate_if_needed(self) -> None:
+        """日志轮转。
+
+        C4：原来只有 ``open(path, "a")`` 一路追加，跑久了能到几百 MB 甚至 GB，
+        排查时打不开、也拖慢程序。这里超过 5 MB 就把当前文件挪成 ``.1``，
+        依次把旧的往后推，最老的丢掉。
+        """
+        try:
+            if self._path is None or not self._path.is_file():
+                return
+            if self._path.stat().st_size < self.MAX_BYTES:
+                return
+            for index in range(self.KEEP - 1, 0, -1):
+                older = self._path.with_suffix(self._path.suffix + f".{index}")
+                newer = self._path.with_suffix(self._path.suffix + f".{index + 1}")
+                if newer.exists():
+                    newer.unlink(missing_ok=True)
+                if older.exists():
+                    older.replace(newer)
+            self._path.replace(
+                self._path.with_suffix(self._path.suffix + ".1"))
+        except OSError:
+            # 轮转失败不该影响正常写日志
+            pass
+
     # ------------------------------------------------------------------ 写入
     def write(self, message: str, level: str = "info") -> None:
         if self._path is None:
@@ -74,6 +103,7 @@ class Journal:
         tag = {"debug": "DBG", "info": "INF", "warn": "WRN", "error": "ERR"}.get(level, "INF")
         line = f"[{stamp}] {tag} {message}\n"
         with self._lock:
+            self._rotate_if_needed()
             try:
                 with open(self._path, "a", encoding="utf-8", errors="replace") as handle:
                     handle.write(line)

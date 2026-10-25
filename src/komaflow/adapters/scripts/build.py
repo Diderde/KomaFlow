@@ -1726,8 +1726,12 @@ def _write(spec: dict, report: dict) -> None:
         print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
         return
     os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-    with open(target, "w", encoding="utf-8") as handle:
+    # C11：先写 .tmp 再替换 —— 渲染中途被杀不会留下截断的 report，
+    # 也就不会让下次复用时 json.loads 抛错（那会整次渲染失败）。
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)
+    os.replace(tmp, target)
     _log(f"report -> {target}")
 
 

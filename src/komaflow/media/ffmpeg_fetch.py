@@ -16,12 +16,16 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-#: 候选下载源（按顺序尝试）。GitHub 资产走国内镜像前缀，直连放最后。
+#: B2：**先直连官方构建站，镜像只作最后兜底**。
+#:
+#: 原来的顺序是"镜像优先"，也就是用户一点同意，最先建立连接的是
+#: ghfast.top / ghproxy.net / gh-proxy.com 这些第三方转发站 ——
+#: 这与"来自官方构建站"的文案不符，也不该是默认行为。
+_DIRECT = ""
 _MIRROR_PREFIXES = [
     "https://ghfast.top/",
     "https://ghproxy.net/",
     "https://gh-proxy.com/",
-    "",
 ]
 
 _GH_ASSET = ("https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
@@ -39,8 +43,17 @@ def install_dir() -> Path:
 
 
 def sources() -> list[str]:
-    urls = [prefix + _GH_ASSET for prefix in _MIRROR_PREFIXES]
-    return urls + _EXTRA_SOURCES
+    """按顺序尝试的下载地址（B2：直连在前，镜像在后）。"""
+    direct = _DIRECT + _GH_ASSET
+    urls = [direct, *_EXTRA_SOURCES]
+    urls += [prefix + _GH_ASSET for prefix in _MIRROR_PREFIXES]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for url in urls:
+        if url and url not in seen:
+            seen.add(url)
+            ordered.append(url)
+    return ordered
 
 
 def _download(url: str, target: Path,

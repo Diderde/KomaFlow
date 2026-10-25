@@ -1,6 +1,7 @@
 MIT License
 
 Copyright (c) 2026 KomaFlow contributors
+(vendored verbatim copy of the MMD 静帧渲染工具包 v2.0.1, same author)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

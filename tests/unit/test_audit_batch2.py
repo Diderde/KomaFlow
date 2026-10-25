@@ -1,0 +1,234 @@
+# -*- coding: utf-8 -*-
+"""第二批审计的回归测试（A5 A6 A9 A10 A11 B2 C1 C4 C5 C11）。
+
+都不起 Blender / ffmpeg：能纯函数测的就纯函数测，其余用文本断言锁住行为。
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+
+
+class TestA5Watchdog(unittest.TestCase):
+    """A5：看门狗不再等"首次进度"，装配有总超时。"""
+
+    def test_watchdog_no_longer_requires_first_progress(self):
+        text = (ROOT / "src/komaflow/adapters/executor.py").read_text(encoding="utf-8")
+        self.assertIn("first_progress_grace", text)
+        self.assertNotIn(
+            "progress_file is not None and last_progress_stamp is not None",
+            text, "看门狗又变回『首次进度之后才生效』了")
+
+    def test_assemble_has_timeout(self):
+        text = (ROOT / "src/komaflow/core/pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("ASSEMBLE_TIMEOUT", text)
+        self.assertIn("timeout=ASSEMBLE_TIMEOUT", text)
+
+    def test_stall_reason_reported(self):
+        text = (ROOT / "src/komaflow/core/pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("stall_reason", text)
+
+
+class TestA6Cancellable(unittest.TestCase):
+    """A6：编码 / 导出 / 拼接都能取消。"""
+
+    def test_ffmpeg_uses_cancellable_spawn(self):
+        text = (ROOT / "src/komaflow/media/ffmpeg.py").read_text(encoding="utf-8")
+        self.assertIn("def _spawn(", text)
+        self.assertIn("cancel is not None and cancel.is_set()", text)
+        self.assertNotIn("subprocess.run(\n            command, capture_output=True, text=True, timeout=",
+                         text)
+
+    def test_export_and_encode_accept_cancel(self):
+        text = (ROOT / "src/komaflow/core/pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("def _export_png_frames(", text)
+        self.assertIn("cancel=cancel", text)
+        self.assertIn("def _encode_png_tracks(\n    *,\n    cancel=None,", text)
+
+
+class TestA7Timeouts(unittest.TestCase):
+    """A7：编码超时按帧数算，不恒定 180 秒。"""
+
+    def test_encode_timeout_scales(self):
+        from komaflow.media.ffmpeg import concat_timeout, encode_timeout
+        self.assertGreaterEqual(encode_timeout(0), 600)
+        self.assertGreater(encode_timeout(100000), 100000)
+        self.assertGreaterEqual(concat_timeout(0), 300)
+        self.assertGreater(concat_timeout(20), concat_timeout(1))
+
+
+class TestA9AlphaCodecNameError(unittest.TestCase):
+    """A9：`DEFAULT_ALPHA_CODEC` 没带模块前缀会 NameError。"""
+
+    def test_prefix_present(self):
+        text = (ROOT / "src/komaflow/ui/app.py").read_text(encoding="utf-8")
+        self.assertNotIn("else DEFAULT_ALPHA_CODEC)", text)
+        self.assertIn("budget.DEFAULT_ALPHA_CODEC", text)
+
+
+class TestA10NoBlockingDownload(unittest.TestCase):
+    """A10：渲染前的 FFmpeg 下载不许在 Tk 主线程同步跑。"""
+
+    def test_prerender_download_is_async(self):
+        text = (ROOT / "src/komaflow/ui/app.py").read_text(encoding="utf-8")
+        start = text.index("def _ensure_ffmpeg(")
+        end = text.index("def on_start(", start)
+        body = text[start:end]
+        self.assertIn("_download_ffmpeg_async", body)
+        self.assertNotIn("ffmpeg_fetch.fetch(", body,
+                         "渲染前又变成同步下载了（界面会冻死）")
+
+
+class TestA11FirstRunPromise(unittest.TestCase):
+    """A11：答"否"不能把 setup_done 置 True，否则"下次会再问"是假话。"""
+
+    def test_flag_only_after_accept(self):
+        text = (ROOT / "src/komaflow/ui/app.py").read_text(encoding="utf-8")
+        start = text.index("def _first_run_setup(")
+        end = text.index("def _save_settings_quietly(", start)
+        body = text[start:end]
+        no_branch = body.index("if not answer:")
+        first_flag_after_no = body.index("ffmpeg_setup_done = True", no_branch)
+        self.assertGreater(first_flag_after_no, no_branch,
+                           "答『否』的分支里又把标志置 True 了")
+
+    def test_no_fake_settings_entry_promise(self):
+        text = (ROOT / "src/komaflow/ui/app.py").read_text(encoding="utf-8")
+        self.assertNotIn("去设置里手动下载", text)
+
+
+class TestB2DownloadSources(unittest.TestCase):
+    """B2：直连优先，镜像只作兜底。"""
+
+    def test_direct_first(self):
+        from komaflow.media import ffmpeg_fetch
+        urls = ffmpeg_fetch.sources()
+        self.assertTrue(urls, "一个下载源都没有")
+        self.assertTrue(urls[0].startswith("https://github.com/"), urls[0])
+        mirrors = [u for u in urls if "ghfast" in u or "ghproxy" in u or "gh-proxy" in u]
+        if mirrors:
+            first_mirror = min(urls.index(u) for u in mirrors)
+            self.assertGreater(first_mirror, 0, "镜像又排到第一个了")
+
+
+class TestC1ZoomGuard(unittest.TestCase):
+    """C1：设置里 ui_zoom 写坏不能把整次 load 拖崩。"""
+
+    def test_bad_zoom_falls_back(self):
+        from komaflow.settings import Settings
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.json"
+            path.write_text(json.dumps({"ui_zoom": "abc"}), encoding="utf-8")
+            original = Settings.path
+            Settings.path = classmethod(lambda cls: path)
+            try:
+                settings = Settings.load()
+                self.assertAlmostEqual(settings.ui_zoom, 1.0)
+            finally:
+                Settings.path = original
+
+
+class TestC4JournalRotation(unittest.TestCase):
+    """C4：日志超过上限要轮转，不能无限长。"""
+
+    def test_rotation_keeps_file_small(self):
+        from komaflow.core.journal import Journal
+
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = Journal()
+            journal.bind(tmp)
+            journal.MAX_BYTES = 4096          # 测试用小阈值
+            for i in range(400):
+                journal.write("x" * 40 + f" #{i}")
+            log = Path(journal._path)
+            self.assertTrue(log.is_file())
+            self.assertLessEqual(log.stat().st_size, 4096 * 2,
+                                 "日志没有被轮转")
+            rotated = list(Path(tmp).rglob("*.log.1"))
+            self.assertTrue(rotated, "没看到 .log.1 —— 轮转没生效")
+
+
+class TestC5SingleFrameReusable(unittest.TestCase):
+    """C5：单帧预览过的工程不该被判"不可用"。"""
+
+    def test_one_frame_is_usable(self):
+        from komaflow.core import pipeline as P
+
+        with tempfile.TemporaryDirectory() as tmp:
+            blend = Path(tmp) / "x.blend"
+            blend.write_bytes(b"\0" * (2 * 1024 * 1024))    # 2 MB，过了大小线
+            ok, why = P._project_usable(blend, {"total_frames": 1,
+                                                "camera": {"name": "KomaFlow_Cam"}})
+            self.assertTrue(ok, why)
+
+    def test_zero_frames_rejected(self):
+        from komaflow.core import pipeline as P
+
+        with tempfile.TemporaryDirectory() as tmp:
+            blend = Path(tmp) / "x.blend"
+            blend.write_bytes(b"\0" * (2 * 1024 * 1024))
+            ok, _ = P._project_usable(blend, {"total_frames": 0,
+                                              "camera": {"name": "Cam"}})
+            self.assertFalse(ok)
+
+
+class TestC11AtomicWrites(unittest.TestCase):
+    """C11：三处写盘都走"临时文件 + replace"。"""
+
+    def test_settings_and_project_atomic(self):
+        for rel in ("src/komaflow/settings.py", "src/komaflow/core/project.py"):
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            self.assertIn("os.replace(", text, f"{rel} 还不是原子写")
+
+    def test_build_report_atomic(self):
+        text = (ROOT / "src/komaflow/adapters/scripts/build.py").read_text(encoding="utf-8")
+        self.assertIn("os.replace(tmp, target)", text)
+
+
+class TestC6ProcessTree(unittest.TestCase):
+    def test_taskkill_used(self):
+        text = (ROOT / "src/komaflow/adapters/executor.py").read_text(encoding="utf-8")
+        self.assertIn('"taskkill"', text)
+        self.assertIn("/T", text)
+
+
+class TestB7DownloadLogic(unittest.TestCase):
+    """B7：下载/解压这条用户路径原来零测试覆盖。"""
+
+    def test_extract_picks_ffmpeg_from_nested_zip(self):
+        import zipfile
+        from komaflow.media import ffmpeg_fetch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "ff.zip"
+            with zipfile.ZipFile(archive, "w") as zf:
+                zf.writestr("ffmpeg-7.0-full_build/bin/ffmpeg.exe", b"MZ" + b"\0" * 64)
+                zf.writestr("ffmpeg-7.0-full_build/bin/ffprobe.exe", b"MZ" + b"\0" * 64)
+                zf.writestr("ffmpeg-7.0-full_build/LICENSE.txt", b"license")
+            dest = Path(tmp) / "out"
+            got = ffmpeg_fetch._extract(archive, dest)
+            names = sorted(p.name for p in got)
+            self.assertEqual(names, ["ffmpeg.exe", "ffprobe.exe"], names)
+
+    def test_sources_are_https_and_unique(self):
+        from komaflow.media import ffmpeg_fetch
+        urls = ffmpeg_fetch.sources()
+        self.assertTrue(all(u.startswith("https://") for u in urls), urls)
+        self.assertEqual(len(urls), len(set(urls)), "下载源有重复")
+
+    def test_install_dir_is_under_localappdata(self):
+        from komaflow.media import ffmpeg_fetch
+        path = ffmpeg_fetch.install_dir()
+        self.assertIn("KomaFlow", str(path))
+
+
+if __name__ == "__main__":
+    unittest.main()

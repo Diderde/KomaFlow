@@ -45,6 +45,8 @@ class ScriptOutcome:
     timed_out: bool = False
     cancelled: bool = False
     stalled: bool = False
+    #: 被判"卡死"时的一句话原因（写进日志/弹窗，别让用户只看到"超时"）
+    stall_reason: str = ""
     log_path: Path | None = None
 
     @property
@@ -115,6 +117,15 @@ def run_blender_script(
     progress_file = Path(progress_path) if progress_path else None
     last_progress_stamp: float | None = None
     last_progress_change = time.time()
+    # 🚨 首次进度之前的宽限。
+    #
+    # 原来的看门狗条件是 ``last_progress_stamp is not None`` ——
+    # 也就是"进度文件**出现过一次**之后才开始盯"。可装配最前面的
+    # 启用 mmd_tools、导入 PMX、打开 .blend 全程都不写进度，
+    # 一旦卡在那里，看门狗形同虚设，界面就永远挂着。
+    # 现在从进程启动就开始计时，只是首次进度前给 3 倍宽限
+    # （大模型导入 + 慢盘确实可能慢，但不会慢到 9 分钟）。
+    first_progress_grace = STALL_SECONDS * 3
 
     started = time.time()
     outcome = ScriptOutcome(returncode=-1, log_path=log_path)
@@ -170,12 +181,18 @@ def run_blender_script(
                             if payload:
                                 on_progress(payload)
 
-                # 心跳：进度文件长时间不更新 ⇒ 认为无响应
-                if (progress_file is not None and last_progress_stamp is not None
-                        and (now - last_progress_change) > STALL_SECONDS):
-                    outcome.stalled = True
-                    _terminate(process)
-                    break
+                # 心跳：长时间没有进度就认为无响应（含"从没出现过进度"这种情况）
+                if progress_file is not None:
+                    limit = (STALL_SECONDS if last_progress_stamp is not None
+                             else first_progress_grace)
+                    if (now - last_progress_change) > limit:
+                        outcome.stalled = True
+                        outcome.stall_reason = (
+                            "Blender 一直没有给出进度"
+                            if last_progress_stamp is None
+                            else f"进度停了超过 {int(limit)} 秒")
+                        _terminate(process)
+                        break
 
                 time.sleep(poll_interval)
         finally:
@@ -196,12 +213,25 @@ def run_blender_script(
 
 
 def _terminate(process: subprocess.Popen) -> None:
-    """先礼后兵：terminate，若 5 秒还不走就 kill。"""
+    """先礼后兵：terminate，5 秒还不走就 kill，**并且要连子进程一起收**。
+
+    Blender 的 ``--background`` 本身一般不起子进程，但它会拉 ffmpeg / 解压线程，
+    而且用户点"终止"时只杀父进程会留下孤儿（Windows 上尤其常见）。
+    ``taskkill /T`` 是按进程树收，比 ``kill()`` 干净。
+    """
     try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T"],
+                capture_output=True, check=False)
         process.terminate()
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    capture_output=True, check=False)
             process.kill()
             process.wait(timeout=5)
     except Exception: # noqa: BLE001 - 收尾阶段不再抛错

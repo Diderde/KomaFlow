@@ -167,8 +167,16 @@ class Settings:
         for key, value in defaults.items():
             if not str(getattr(settings, key) or "").strip():
                 setattr(settings, key, value)
-        if not 0.5 <= float(settings.ui_zoom or 1.0) <= 3.0:
+        try:
+            zoom = float(settings.ui_zoom or 1.0)
+        except (TypeError, ValueError):
+            # C1：设置文件里写了个 "abc" 之类的值，原来会直接抛 ValueError
+            # 让 Settings.load() 失败 → 程序起不来。docstring 承诺"读坏了给默认值"。
+            zoom = 1.0
+        if not 0.5 <= zoom <= 3.0:
             settings.ui_zoom = 1.0
+        else:
+            settings.ui_zoom = zoom
         return settings
 
     def save(self) -> Path:
@@ -177,7 +185,11 @@ class Settings:
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             payload = json.dumps(asdict(self), ensure_ascii=False, indent=2)
-            target.write_text(payload + "\n", encoding="utf-8")
+            # C11：非原子写会在"写一半被杀"时留下截断的 json，
+            # 下次启动解析失败（C1 就是被这个连带放大的）。
+            tmp = target.with_suffix(target.suffix + ".tmp")
+            tmp.write_text(payload + "\n", encoding="utf-8")
+            os.replace(tmp, target)
         except OSError:
             pass
         return target

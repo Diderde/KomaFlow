@@ -10,6 +10,7 @@ FR-1.8（明确不支持 DirectX ``.x`` 舞台）· K-6（渲前预检能查的�
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -417,7 +418,10 @@ class Project:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
-        target.write_text(payload + "\n", encoding="utf-8")
+        # C11：先写 .tmp 再替换，避免"写一半崩掉"留下坏工程档
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(payload + "\n", encoding="utf-8")
+        os.replace(tmp, target)
         return target
 
     @classmethod

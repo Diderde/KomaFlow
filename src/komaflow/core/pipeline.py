@@ -610,6 +610,7 @@ def run_project(
                 segments=[item.segment for item in plan.segments],
                 work_dir=work_dir, output_dir=output_dir,
                 basename=safe_basename(project.output.basename), on_event=on_event,
+                cancel=cancel,
             )
             result.output = final
             result.alpha_output = None
@@ -638,7 +639,7 @@ def run_project(
                 output_dir=output_dir,
                 basename=safe_basename(project.output.basename), params=params,
                 codec=alpha_codec,
-                ffmpeg=ffmpeg, on_event=on_event,
+                ffmpeg=ffmpeg, on_event=on_event, cancel=cancel,
             )
         else:
             final = unique_output_path(
@@ -664,7 +665,7 @@ def run_project(
                 _emit(on_event, "log", level="info",
                       message="单段渲染：已直接落成片（未使用 FFmpeg）")
             else:
-                concat_segments(rendered_parts, final, ffmpeg=ffmpeg)
+                concat_segments(rendered_parts, final, ffmpeg=ffmpeg, cancel=cancel)
 
         # ── ⑥ verify_final：**数产物，不数期望值** ────────────────
         # ⚠️ 原来这里断言"成片帧数 == 工程总帧数"，那条断言在续渲场景下是错的：
@@ -789,8 +790,11 @@ def _project_usable(blend_path: Path, report: dict) -> tuple[bool, str]:
     size_mb = blend_path.stat().st_size / 1048576
     if size_mb < 1.0:
         return False, f"工程文件太小（{size_mb:.2f} MB），像是空壳"
-    if int(report.get("total_frames") or 0) <= 1:
-        return False, "工程里只有 1 帧"
+    # C5：只拒"0 帧"。原来写 ``<= 1``，于是用户先用「单帧预览」渲一张（区间 0–0），
+    # 存档里 total_frames=1，此后整片渲染都判这份工程不可用 —— 每次白等一遍装配+烘焙，
+    # 而"单帧预览与整片共用同一份工程"正是宣传里的点。空壳工程由上面 <1 MB 兜住。
+    if int(report.get("total_frames") or 0) < 1:
+        return False, "工程里一帧都没有"
     if not report.get("camera"):
         return False, "工程里没有相机"
     return True, ""
@@ -820,6 +824,9 @@ def _refresh_frame_fields(report: dict, params) -> dict:
     report["preroll_frames"] = int(getattr(params, "preroll_frames", 0) or 0)
     return report
 
+
+#: 装配（含物理烘焙）的总超时上限。正常只要十几分钟，这里是兜底。
+ASSEMBLE_TIMEOUT = 3600.0
 
 #: 决定"要不要重新装配"的关键输入 —— 换任何一个都必须重装。
 _INPUT_KEYS = ("route", "model", "blend_in", "motions", "camera_motion",
@@ -1032,14 +1039,17 @@ def _prepare_and_assemble(
             except OSError as exc:
                 _emit(on_event, "log", level="warn",
                       message=f"工程文件复制失败，改为重新装配：{exc}")
+                copy_failed = True
             else:
                 return adapter, exe, _refresh_frame_fields(saved["report"], params)
+
+    copy_failed = False   # 复制失败 ≠ 素材变了，日志要分开说
 
     # 到这里说明没有可复用的"已保存工程"
     if durable_blend.is_file() and not usable:
         _emit(on_event, "log", level="warn",
               message=f"已保存的工程不可用（{why_not}），重新装配")
-    elif durable_blend.is_file():
+    elif durable_blend.is_file() and not copy_failed:
         _emit(on_event, "log", level="info",
               message="素材有变化，按当前选择重新装配（不会用旧工程）")
 
@@ -1077,9 +1087,15 @@ def _prepare_and_assemble(
         seen_progress.add(message)
         _emit(on_event, "log", level="info", message=message)
 
+    # 🚨 装配也必须有总超时。
+    #
+    # 原来这里干脆没传 ``timeout``，而看门狗又只在"进度出现过一次"之后才生效 ——
+    # 只要卡在导入 PMX / 打开 .blend 之前，就是**无限挂着**。
+    # 1 小时是上限（正常装配最多十几分钟，含物理烘焙）。
     outcome = run_blender_script(
         exe, adapter.script("build.py"), build_spec, spec_path,
         log_path=work_dir / "build.log", cancel=cancel, control=control,
+        timeout=ASSEMBLE_TIMEOUT,
         progress_path=work_dir / "build_progress.json",
         on_progress=_on_build_progress,
     )
@@ -1473,7 +1489,8 @@ def _render_one_segment(
 
         why = (f"（退出码 {outcome.returncode}"
                f"{'，超时' if outcome.timed_out else ''}"
-               f"{'，无响应' if outcome.stalled else ''}）")
+               f"{'，无响应' if outcome.stalled else ''}"
+               f"{'：' + outcome.stall_reason if getattr(outcome, 'stall_reason', '') else ''}）")
 
         # 成败只看产物与探测结果，不看退出码（设计取舍）
         if transparent:
@@ -1543,7 +1560,8 @@ def unique_output_path(target: Path) -> Path:
 
 
 def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
-                       basename: str, on_event=None) -> tuple[Path, int]:
+                       basename: str, on_event=None,
+                       cancel=None) -> tuple[Path, int]:
     """把各段的 PNG 帧按顺序导出到 `<输出目录>/<成片名>_frames/`。
 
     PNG 序列模式下分段产物散在 ``segments/`` 里，用户要的是一个能直接用的
@@ -1575,6 +1593,8 @@ def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
                 shutil.copy2(source,
                              staging / f"{safe_basename(basename)}_{index:04d}.png")
                 index += 1
+            if cancel is not None and cancel.is_set():
+                raise KomaFlowError(ErrorKind.USER_CANCELLED)
             if on_event is not None:
                 _emit(on_event, "progress", segment=order,
                       segment_total=len(segments), frame_done=index,
@@ -1600,6 +1620,7 @@ def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
 
 def _encode_png_tracks(
     *,
+    cancel=None,
     segments: list,
     work_dir: Path,
     output_dir: Path,
@@ -1670,7 +1691,8 @@ def _encode_png_tracks(
 
         part = parts_dir / f"part_{order:04d}.mov"
         encode_mov_alpha(stage_dir, part, prefix=stage_prefix,
-                         fps=params.fps, codec=codec, ffmpeg=ffmpeg)
+                         fps=params.fps, codec=codec, ffmpeg=ffmpeg,
+                         cancel=cancel)
         parts.append(part)
         _emit(on_event, "log", level="info",
               message=f"已编码第 {order + 1}/{len(segments)} 段")
@@ -1678,7 +1700,7 @@ def _encode_png_tracks(
     _emit(on_event, "progress", segment=len(segments), segment_total=len(segments),
           frame_done=0, frame_total=0, percent=99.0, encoding=True,
           message="正在把各段拼成一条")
-    concat_streams(parts, target, ffmpeg=ffmpeg)
+    concat_streams(parts, target, ffmpeg=ffmpeg, cancel=cancel)
     shutil.rmtree(parts_dir, ignore_errors=True)
     return target, target
 

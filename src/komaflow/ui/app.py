@@ -1293,15 +1293,18 @@ class KomaFlowApp:
         answer = messagebox.askyesno(
             "首次使用：准备 FFmpeg",
             "要把渲染结果拼成视频（MP4 / MOV），需要一个叫 FFmpeg 的小工具。\n"
-            "它不随本软件分发，我可以现在替你下载（约 90 MB，来自官方构建站）。\n\n"
+            "它不随本软件分发，我可以现在替你下载（约 90 MB，来自第三方构建站，"
+            "不是 FFmpeg 项目官方发布）。\n\n"
             "选「否」也能用：输出格式里选「PNG 图片序列」就不需要它。\n"
-            "以后想装：重新打开程序会自动再问，或去设置里手动下载。",
+            "以后想装：下次打开程序会再问一次；你自己装好 FFmpeg 也行，程序会自动找到它。",
         )
+        if not answer:
+            # A11：原来不管用户答什么都把 ffmpeg_setup_done 置 True，
+            # 于是"下次打开会再问"这句承诺是假的。只有真的处理过才记。
+            self._log("已跳过 FFmpeg 下载（PNG 图片序列不需要它）；下次启动会再问")
+            return
         self.settings.ffmpeg_setup_done = True
         self._save_settings_quietly()
-        if not answer:
-            self._log("已跳过 FFmpeg 下载（PNG 图片序列不需要它）")
-            return
         self._download_ffmpeg_async()
 
     def _save_settings_quietly(self) -> None:
@@ -3449,7 +3452,7 @@ class KomaFlowApp:
         # 存的就是内部键，直接用；文件里万一有怪值就退回默认
         self.alpha_codec.set(project.params.alpha_codec
                              if project.params.alpha_codec in ALPHA_CODEC_CHOICES
-                             else DEFAULT_ALPHA_CODEC)
+                             else budget.DEFAULT_ALPHA_CODEC)   # A9：原来漏了 budget. 前缀，打开非法 alpha_codec 的工程必崩
         self.vars["limit"].set("" if project.params.segment_limit is None
                                else str(project.params.segment_limit))
         self._refresh_cards()
@@ -3922,7 +3925,7 @@ class KomaFlowApp:
         answer = messagebox.askyesno(
             "透明 MOV 需要 FFmpeg",
             "输出透明 MOV（带 alpha 的视频）需要 FFmpeg，它不随本软件分发。\n\n"
-            "要现在自动下载吗？约 90 MB，来自 FFmpeg 官方构建站（GPL 构建）。\n"
+            "要现在自动下载吗？约 90 MB，来自第三方构建站（BtbN / gyan.dev，不是 FFmpeg 项目自己的官方发布）。\n"
             "下载后放在本机用户目录，只用于编码，不会上传任何东西。\n\n"
             "不想下载的话：把输出格式改成「MP4」或「PNG 图片序列」，这两条都不需要它。",
         )
@@ -3930,22 +3933,12 @@ class KomaFlowApp:
             self._log("已取消：透明 MOV 需要 FFmpeg，用户选择不下载")
             return False
 
-        from komaflow.media import ffmpeg_fetch
-
-        self._log("正在下载 FFmpeg（约 90 MB）…")
-
-        def progress(url: str, done: int, total: int) -> None:
-            pct = int(done / total * 100) if total else 0
-            self._log(f"  FFmpeg 下载 {pct}%  ({done // 1048576}/{max(total, 1) // 1048576} MB)")
-
-        try:
-            target = ffmpeg_fetch.fetch(on_progress=progress, on_note=self._log)
-        except Exception as exc:      # noqa: BLE001
-            messagebox.showerror("下载失败", f"{exc}\n\n可以改成 MP4 或 PNG 图片序列继续。")
-            return False
-        os.environ[ENV_FFMPEG] = str(target)
-        self._log(f"FFmpeg 已就绪：{target}")
-        return True
+        # A10：这里原来是**在 Tk 主线程里同步下载 90 MB** ——
+        # 用户一点"是"，整个界面就冻住（不能取消、看不到进度），慢网能冻几分钟。
+        # 改成复用首启那套后台下载，并在状态栏告诉他再点一次。
+        self._download_ffmpeg_async()
+        self.vars["status"].set("正在后台下载 FFmpeg…下载完成后请再点「开始渲染」")
+        return False
 
     def on_start(self) -> None:
         if self.worker and self.worker.is_alive():
