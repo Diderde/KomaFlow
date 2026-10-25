@@ -196,26 +196,41 @@ def _spawn(command: list[str], *, what: str, timeout: float | None = None,
 
     返回 ``(returncode, stdout, stderr, cancelled)``。超时会直接抛。
     """
-    process = subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, encoding="utf-8", errors="replace", **_no_window())
-    started = time.time()
-    while True:
-        code = process.poll()
-        if code is not None:
-            out, err = process.communicate()
-            return code, out or "", err or "", False
-        if cancel is not None and cancel.is_set():
-            _kill_tree(process)
-            out, err = process.communicate()
-            return -1, out or "", err or "", True
-        if timeout is not None and (time.time() - started) > timeout:
-            _kill_tree(process)
-            out, err = process.communicate()
-            raise KomaFlowError(
-                ErrorKind.ASSET_CORRUPT,
-                detail=f"{what}超时（超过 {int(timeout)} 秒）")
-        time.sleep(0.2)
+    # ⚠️ 不要用 PIPE：这里是在循环里 poll，没人读管道 ——
+    # 一旦子进程输出超过管道缓冲（Windows 约 64 KB）就会互相卡死。
+    # 写临时文件，进程结束后一次性读回来。
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8",
+                                errors="replace") as out_file, \
+            tempfile.TemporaryFile(mode="w+", encoding="utf-8",
+                                   errors="replace") as err_file:
+        process = subprocess.Popen(
+            command, stdout=out_file, stderr=err_file,
+            text=True, encoding="utf-8", errors="replace", **_no_window())
+        started = time.time()
+
+        def _collect() -> tuple[str, str]:
+            out_file.seek(0)
+            err_file.seek(0)
+            return out_file.read(), err_file.read()
+
+        while True:
+            code = process.poll()
+            if code is not None:
+                out, err = _collect()
+                return code, out, err, False
+            if cancel is not None and cancel.is_set():
+                _kill_tree(process)
+                process.wait(timeout=10)
+                out, err = _collect()
+                return -1, out, err, True
+            if timeout is not None and (time.time() - started) > timeout:
+                _kill_tree(process)
+                process.wait(timeout=10)
+                _collect()
+                raise KomaFlowError(
+                    ErrorKind.ASSET_CORRUPT,
+                    detail=f"{what}超时（超过 {int(timeout)} 秒）")
+            time.sleep(0.2)
 
 
 def _kill_tree(process: subprocess.Popen) -> None:

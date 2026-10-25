@@ -546,7 +546,7 @@ def run_project(
         result.segments_invalidated = invalidation["removed"]
 
         def prober(path: Path):
-            return probe_video(path, ffmpeg)
+            return probe_video(path, ffmpeg, cancel=cancel)
 
         # 没有 FFmpeg 就**不能拼接**：改成一次渲完整片（单段），
         # 这样 MP4 也能正常出片，只是这次没有断点续渲。
@@ -676,7 +676,7 @@ def run_project(
             # 上面 _export_png_frames 已按张数核对过，这里不再 probe
             return
         try:
-            info_final = probe_video(final, ffmpeg)
+            info_final = probe_video(final, ffmpeg, cancel=cancel)
         except KomaFlowError:
             # 没有 ffprobe 时用 Blender 内部 ffmpeg 读（用户机器通常只有 Blender）
             from ..adapters.blender5 import probe_movie_with_blender
@@ -1523,7 +1523,7 @@ def _render_one_segment(
             return
 
         try:
-            probe_video(temp_target, ffmpeg)
+            probe_video(temp_target, ffmpeg, cancel=cancel)
         except KomaFlowError as exc:
             last_error = f"第 {index + 1} 段第 {attempt} 次：产物读不出来（{exc.detail}）"
             _emit(on_event, "log", level="warn", message=last_error)
