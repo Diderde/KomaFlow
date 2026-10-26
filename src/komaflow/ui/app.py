@@ -2629,19 +2629,26 @@ class KomaFlowApp:
             self._draw_preview_background()
 
     def _plan_segments_now(self) -> list:
-        """按当前参数算一遍要分几批。**纯粹为了显示，算不出来就返回空表。**"""
+        """按当前参数算一遍要分几批。**纯粹为了显示，算不出来就返回空表。**
+
+        ⚠️ 「渲染区间」没填时**不要编一个总帧数**。
+        原来这里用 ``FALLBACK_FRAMES``（1800）去猜，猜出「90 张一批」挂在界面上，
+        可真正渲染用的是装配后才知道的动作长度（实测 601 帧）——
+        于是用户看到「41 / 90 张」而 Blender 一路渲到 601 帧，
+        还以为是"到目标帧不停"。分批表必须以管线发来的真实段为准（见 _reset_batches）。
+        """
         start = self._int_var("frame_start", 0)
         end = self._int_var("frame_end", 0)
-        total = (end - start) if end > start else FALLBACK_FRAMES
+        if end <= start:
+            return []
         limit = self._int_var("limit", DEFAULT_SEGMENT_LIMIT)
         try:
-            return plan_segments(max(1, total), limit if limit > 0 else None)
+            return plan_segments(max(1, end - start), limit if limit > 0 else None)
         except ValueError:
             return []
 
     def _describe_batches(self) -> list[tuple[str, int]]:
-        segments = self._planned_segments or [
-            (seg.start, seg.end) for seg in self._plan_segments_now()]
+        segments = self._planned_segments
         return [(f"第 {index + 1} 批", end - start + 1)
                 for index, (start, end) in enumerate(segments)]
 
@@ -2651,12 +2658,12 @@ class KomaFlowApp:
         ⚠️ 定下来之后就不能再跟着输入框变了 —— 否则用户中途改一下"一次最多渲"，
         界面上的批次就跟实际跑的段对不上（这比不显示更糟）。
         """
-        self._planned_segments = [(seg.start, seg.end)
-                                 for seg in self._plan_segments_now()]
+        self._planned_segments = []
         batch = getattr(self, "batch", None)
         if batch is None:
             return
-        batch.set_plan(self._describe_batches())
+        # 空表 → 卡片显示"装配完才知道分几批"，而不是一个猜出来的 90 张
+        batch.set_plan([])
 
     def _mark_all_batches_done(self) -> None:
         """成片出来了 —— 每一批都点成"已完成 N 张"。"""
@@ -2678,7 +2685,12 @@ class KomaFlowApp:
             return
         if not (0 <= index < len(self._planned_segments)):
             return
-        start, end = self._planned_segments[index]
+        # 优先用事件自带的段范围（比计划表更权威：计划表可能还没建好）
+        if event.get("frame_start") is not None and event.get("segment_end") is not None:
+            start = int(event["frame_start"])
+            end = int(event["segment_end"])
+        else:
+            start, end = self._planned_segments[index]
         expected = end - start + 1
         done = event.get("frame_done")
         total = event.get("frame_total")
@@ -2698,7 +2710,7 @@ class KomaFlowApp:
             if per_frame and per_frame > 0:
                 note += f"　{per_frame:.2f} 秒/帧"
             if eta and eta > 0:
-                note += f"　还剩 {self._duration(eta)}"
+                note += f"　全片还剩 {self._duration(eta)}"
         batch.set_state(index, RUNNING, note)
 
     def _material_rows(self) -> list[tuple[str, str, bool]]:
@@ -4022,8 +4034,10 @@ class KomaFlowApp:
                 self.control.paused.clear()
                 self.btn_pause.set_text("暂停")
             self.cancel.set()
-            self.vars["status"].set("已请求终止 —— 已完成的段会保留")
+            self.vars["status"].set("已请求终止 —— 已渲的帧留在中间产物目录里")
             self._log("已请求终止。已完成的段不会白渲，重新开始会自动跳过。")
+            _wd = self.vars["work_dir"].get()
+            self._log(f"中间产物（已渲的帧）在：{Path(_wd) / 'segments'}")
 
     def on_close(self) -> None:
         if self.worker and self.worker.is_alive():
@@ -4140,14 +4154,27 @@ class KomaFlowApp:
             self.vars["status"].set(
                 f"帧 {event.get('frame_done')}/{event.get('frame_total')}"
                 f"　{per_frame:.2f} 秒/帧"
-                f"　预计剩余 {self._duration(eta)}")
+                f"　全片还剩 {self._duration(eta)}")
             self._set_card_step(1, RUNNING,
                                 f"第 {segment + 1}/{event.get('segment_total')} 段")
             self._mark_batch_running(segment, event)
 
         elif kind == "segment":
-            self._set_card_step(1, RUNNING, f"第 {event['index'] + 1}/{event['total']} 段")
-            self._mark_batch_running(event["index"], event)
+            # 真实段范围到了 —— 这才是这批要渲多少张的唯一依据
+            index = int(event["index"])
+            start = int(event["frame_start"])
+            end = int(event["frame_end"])
+            total_segments = int(event["total"])
+            first_plan = not self._planned_segments
+            while len(self._planned_segments) < total_segments:
+                self._planned_segments.append((0, 0))
+            self._planned_segments[index] = (start, end)
+            batch = getattr(self, "batch", None)
+            if batch is not None and first_plan:
+                # 只在第一次拿到段表时重建行（重建会清掉已完成状态）
+                batch.set_plan(self._describe_batches())
+            self._set_card_step(1, RUNNING, f"第 {index + 1}/{total_segments} 段")
+            self._mark_batch_running(index, event)
             self._log(f"第 {event['index'] + 1}/{event['total']} 段："
                       f"帧 {event['frame_start']} ~ {event['frame_end']}")
 

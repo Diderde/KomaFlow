@@ -230,5 +230,46 @@ class TestB7DownloadLogic(unittest.TestCase):
         self.assertIn("KomaFlow", str(path))
 
 
+class TestBatchProgressMatchesRealSegments(unittest.TestCase):
+    """分批进度的分母必须是**真实段范围**，不能用猜的总帧数。"""
+
+    def test_plan_is_empty_when_range_not_filled(self):
+        text = (ROOT / "src/komaflow/ui/app.py").read_text(encoding="utf-8")
+        start = text.index("def _plan_segments_now(")
+        end = text.index("def _describe_batches(", start)
+        body = text[start:end]
+        self.assertIn("if end <= start:", body)
+        self.assertIn("return []", body)
+        # 注释里提到 FALLBACK_FRAMES 是解释历史原因，真正的判断看这行代码在不在
+        code_lines = [line for line in body.splitlines()
+                      if not line.strip().startswith("#")]
+        self.assertFalse(
+            any("FALLBACK_FRAMES" in line and "total" in line for line in code_lines),
+            "又在用兜底帧数猜分批表了")
+
+    def test_progress_event_carries_segment_range(self):
+        text = (ROOT / "src/komaflow/core/pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("frame_start=segment.start, segment_end=segment.end,", text)
+
+    def test_remaining_after_counts_only_following_segments(self):
+        from komaflow.core.pipeline import _remaining_after
+        from komaflow.core.segment import plan_segments
+
+        segment = plan_segments(300, None)[0]
+        got = _remaining_after(segment, 300, 0, {"seconds_per_frame": 2.0})
+        # 只有一段 → 后续段为空 → 0；不该出现"本段剩余也乘 0"那种含糊
+        self.assertEqual(got, 0.0)
+
+    def test_remaining_after_scales_with_leftover(self):
+        from komaflow.core.pipeline import _remaining_after
+        from komaflow.core.segment import plan_segments
+
+        segments = plan_segments(300, 100)
+        first = segments[0]
+        got = _remaining_after(first, 300, 0, {"seconds_per_frame": 2.0})
+        self.assertGreater(got, 0.0)
+        self.assertAlmostEqual(got, (300 - first.count) * 2.0, places=3)
+
+
 if __name__ == "__main__":
     unittest.main()

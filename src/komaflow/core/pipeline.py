@@ -1461,6 +1461,8 @@ def _render_one_segment(
             _emit(
                 on_event, "progress",
                 segment=index, segment_total=total,
+                # 这批的真实起止帧 —— 界面拿它当分母，别再猜
+                frame_start=segment.start, segment_end=segment.end,
                 frame_done=frames_done, frame_total=total_frames,
                 percent=round(frames_done / total_frames * 100, 2) if total_frames else 0.0,
                 segment_elapsed=payload.get("elapsed_seconds"),
@@ -1485,7 +1487,11 @@ def _render_one_segment(
         )
 
         if cancel is not None and cancel.is_set():
-            raise KomaFlowError(ErrorKind.USER_CANCELLED)
+            # 用户终止：**必须告诉他已渲的帧在哪**，否则他会以为"什么都没出来"
+            done_note = _describe_partial_outputs(work_dir, segments_dir_hint)
+            raise KomaFlowError(
+                ErrorKind.USER_CANCELLED,
+                detail=(f"已终止。{done_note}" if done_note else "已终止。"))
 
         why = (f"（退出码 {outcome.returncode}"
                f"{'，超时' if outcome.timed_out else ''}"
@@ -1705,15 +1711,40 @@ def _encode_png_tracks(
     return target, target
 
 
+def _describe_partial_outputs(work_dir: Path, segments_dir: Path | None) -> str:
+    """数一下中间产物里已经落了多少帧，返回一句人话。
+
+    终止或失败时用它 —— 用户最想知道的就两件事：
+    "我这一趟白跑了吗？"（没白跑）和"东西在哪？"。
+    """
+    try:
+        directory = segments_dir or (work_dir / "segments")
+        if not directory.is_dir():
+            return ""
+        files = [p for p in directory.iterdir() if p.is_file()]
+        if not files:
+            return ""
+        total_mb = sum(p.stat().st_size for p in files) / 1048576
+        pngs = sum(1 for p in files if p.suffix.lower() == ".png")
+        count = f"{pngs} 张 PNG" if pngs else f"{len(files)} 个文件"
+        return (f"已经渲好的 {count}（{total_mb:.0f} MB）在中间产物目录：{directory}"
+                "（成片要等全部渲完才会生成）")
+    except OSError:
+        return ""
+
+
 def _remaining_after(segment: Segment, total_frames: int, done_before: int, payload: dict) -> float:
-    """本段之后还没渲的帧数，乘上当前实测单帧耗时，得到全片剩余估计（K-5.2）。"""
+    """**本段之后**还没渲的帧 × 单帧耗时。
+
+    ⚠️ 这里只算"后续段"，本段剩余由渲染脚本自己的 ``eta_seconds`` 提供，
+       调用方把两者相加 = 全片剩余。原来写了 ``frames_left_in_segment * 0.0``
+       （等于把本段剩余乘 0 丢掉），语义含糊，已改正并写清。
+    """
     per_frame = payload.get("seconds_per_frame")
     if not per_frame:
         return 0.0
-    frames_left_in_segment = max(
-        0, segment.count - int(payload.get("frames_done") or 0))
     frames_after = max(0, total_frames - done_before - segment.count)
-    return (frames_left_in_segment * 0.0) + frames_after * float(per_frame)
+    return frames_after * float(per_frame)
 
 
 def _wait_for_artifact(path: Path, timeout: float = 8.0, interval: float = 0.25) -> ArtifactState:
