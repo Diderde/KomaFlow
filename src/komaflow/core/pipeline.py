@@ -1245,6 +1245,17 @@ def _collect_report_notes(project: Project, report: dict, result: "RunResult", o
                     " —— 出片里大部分部位不会动。"
                     "多半是「角色模型」卡里放的是一份 .blend（或换过模型），"
                     "请改用这个角色原本的 .pmx。")
+            # 🚨 把**骨骼名样例**一起给出来：没有样例，用户只能对着一句
+            # "不匹配"瞎猜。样例是乱码 → 多为动作文件编码不是标准 Shift-JIS；
+            # 样例是正常日文但模型侧没有 → 模型被改过名或用了非标准骨架。
+            missing_sample = [str(x) for x in (coverage.get("missing_sample") or [])[:8]]
+            matched_sample = [str(x) for x in (coverage.get("matched_sample") or [])[:8]]
+            if missing_sample:
+                note += "\n动作里有、模型上找不到的骨骼（样例）：、" + "、".join(missing_sample)
+            if matched_sample:
+                note += "\n能对上的骨骼（样例）：、" + "、".join(matched_sample)
+            note += ("\n（完整清单在装配报告 bone_coverage 里；"
+                     "若上面的样例显示为乱码，多半是动作文件编码问题）")
             result.warnings.append(note)
             _emit(on_event, "log", level="warn", message=note)
 
@@ -1636,7 +1647,9 @@ def _export_png_frames(*, segments, work_dir: Path, output_dir: Path,
         shutil.rmtree(staging, ignore_errors=True)
         raise KomaFlowError(ErrorKind.ASSET_CORRUPT, detail="一张 PNG 都没导出")
 
-    # 全部导出成功 → 用新目录整体替换旧目录（旧的那批这时才删）
+    # 全部导出成功 → 用新目录整体替换旧目录（旧的那批这时才删）。
+    # 该目录是**工具专属**的输出目录（成功即清空重建，防止越攒越多）；
+    # 用户不要把自己的文件放在这里。
     if target_dir.is_dir():
         shutil.rmtree(target_dir, ignore_errors=True)
     staging.replace(target_dir)
