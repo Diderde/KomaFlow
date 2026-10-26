@@ -220,5 +220,46 @@ class ProjectUsableBakeCheckTests(unittest.TestCase):
         self.assertEqual(_project_usable(self.blend, self._report()), (True, ""))
 
 
+class FFmpegFetchSourcesTests(unittest.TestCase):
+    """下载源顺序与白名单：钉死版本在前，直连次之，镜像最后。"""
+
+    def test_sources_order_pinned_first_mirrors_last(self):
+        from komaflow.media import ffmpeg_fetch as ff
+
+        urls = ff.sources()
+        pinned_url = ff._PINNED_SOURCES[0][0]
+        direct = ff._GH_ASSET
+        mirrored = ff._MIRROR_PREFIXES[0] + ff._GH_ASSET
+        self.assertEqual(urls[0], pinned_url, "钉死版本必须排第一")
+        self.assertLess(urls.index(direct), urls.index(mirrored),
+                        "直连必须在镜像之前")
+        # 白名单里的每个镜像域名都各有一个变体
+        for prefix in ff._MIRROR_PREFIXES:
+            self.assertIn(prefix + ff._GH_ASSET, urls)
+
+    def test_check_url_rejects_non_https_and_unknown_hosts(self):
+        from komaflow.media import ffmpeg_fetch as ff
+
+        ok = ff._check_url("https://github.com/GyanD/codexffmpeg/releases/a.zip")
+        self.assertEqual(ok, ok)  # 不抛即通过
+        for bad in ("http://github.com/a.zip",                    # 非 https
+                    "https://evil.example.com/a.zip",             # 未知域名
+                    "https://127.0.0.1/a.zip"):                   # 本机地址
+            with self.assertRaises(RuntimeError, msg=bad):
+                ff._check_url(bad)
+
+    def test_sha256_of_known_content(self):
+        import tempfile
+
+        from komaflow.media import ffmpeg_fetch as ff
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "sha_probe.bin"
+            target.write_bytes(b"abc")
+            self.assertEqual(
+                ff._sha256_of(target),
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+
+
 if __name__ == "__main__":
     unittest.main()
