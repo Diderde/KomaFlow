@@ -1554,6 +1554,17 @@ def main() -> int:
 
         # ── 只覆盖分辨率与帧率（设计取舍）──
         scene = bpy.context.scene
+        # 🚨 色彩管理：**MMD 材质是按 sRGB 作者色调的**，Blender 4/5 默认 AgX
+        # 会把它压得发灰发白（实测同一帧：AgX 饱和度 ~14，Standard ~28）。
+        # 观感迁移如果带了自己的设置会覆盖这里，所以先给一个正确默认值。
+        try:
+            scene.view_settings.view_transform = "Standard"
+            scene.view_settings.look = "None"
+            scene.view_settings.exposure = 0.0
+            scene.view_settings.gamma = 1.0
+            report["view_transform"] = "Standard"
+        except (AttributeError, TypeError) as exc:  # noqa: BLE001 - 老版本 Blender 没有该枚举
+            _log(f"设置色彩管理失败（继续用默认）：{exc}")
         scene.render.fps = int(spec.get("fps", 30))
         scene.render.fps_base = 1.0
         scene.render.resolution_x = int(spec.get("width", 2560))

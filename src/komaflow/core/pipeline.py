@@ -744,8 +744,14 @@ def _apply_look_migration(report: dict, exe, adapter, work_dir: Path,
     """
     params = project.params
     look_blend = str(getattr(params, "look_from_blend", "") or "").strip()
-    if not look_blend or report.get("opened_blend"):
+    if not look_blend:
         return {}
+    # ⚠️ 路线 B（用户自己的 .blend）**也要迁移**。
+    #
+    # 原来这里写着 ``or report.get("opened_blend")`` —— 也就是"打开了别人的工程就
+    # 不套观感"。结果用户把三视图 .blend 拖进角色卡时，渲出来是 MMD 原始材质 +
+    # AgX，看起来发灰发白（他原话："完全不像人""之前没这种色彩异常"）。
+    # 观感只是替换**同名材质**、并复制色彩管理，不动物件与骨架，对路线 B 同样安全。
     look_path = Path(look_blend)
     if not look_path.is_file():
         _emit(on_event, "log", level="warn",

@@ -271,5 +271,34 @@ class TestBatchProgressMatchesRealSegments(unittest.TestCase):
         self.assertAlmostEqual(got, (300 - first.count) * 2.0, places=3)
 
 
+class TestLookAlwaysApplied(unittest.TestCase):
+    """观感（卡渲材质 + Standard 色彩管理）必须**两条路线都生效**。
+
+    用户报的原话：
+
+    > 这完全不像人，你别光看局部颜色
+    > 之前是没这种色彩异常情况的
+
+    实测：路线 B（角色卡放的是 .blend）时原来**跳过观感迁移**，
+    渲出来是 MMD 原始材质 + Blender 默认 AgX —— 发灰发白、脸像白面具。
+    """
+
+    def test_route_b_also_migrates(self):
+        text = (ROOT / "src/komaflow/core/pipeline.py").read_text(encoding="utf-8")
+        start = text.index("def _apply_look_migration(")
+        end = text.index("def _project_usable(", start)
+        body = text[start:end]
+        code = [line for line in body.splitlines()
+                if not line.strip().startswith("#")]
+        self.assertFalse(
+            any('report.get("opened_blend")' in line for line in code),
+            "路线 B 又被排除在观感迁移之外了")
+
+    def test_default_view_transform_is_standard(self):
+        text = (ROOT / "src/komaflow/adapters/scripts/build.py").read_text(encoding="utf-8")
+        self.assertIn('scene.view_settings.view_transform = "Standard"', text)
+        self.assertIn('scene.view_settings.look = "None"', text)
+
+
 if __name__ == "__main__":
     unittest.main()
