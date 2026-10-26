@@ -803,6 +803,19 @@ def _project_usable(blend_path: Path, report: dict) -> tuple[bool, str]:
         return False, "工程里一帧都没有"
     if not report.get("camera"):
         return False, "工程里没有相机"
+    # 物理：报告里带烘焙错误（或烘了却没烘成）的工程不能复用 ——
+    # 头发裙摆会静止甚至比关物理还僵，而且怎么重渲都是旧的坏结果。
+    # durable 与 work 两条复用通道都从这里过，堵一处即堵全部。
+    # ⚠️ route B 且模型本来就没有刚体（verdict=no_rigid_bodies）时
+    #    build.py 本来就不写 physics_bake —— 那是合法状态，要放行；
+    #    缺 physics_bake 键的极简/历史档案也放行（多装配一次无意义）。
+    bake = report.get("physics_bake") or {}
+    if bake.get("error"):
+        return False, "上次物理烘焙失败"
+    route_b_verdict = (report.get("route_b_physics") or {}).get("verdict")
+    if route_b_verdict != "no_rigid_bodies":
+        if bake.get("baked") is False and not bake.get("skipped"):
+            return False, "上次物理烘焙没有完成"
     return True, ""
 
 
@@ -1494,7 +1507,7 @@ def _render_one_segment(
 
         if cancel is not None and cancel.is_set():
             # 用户终止：**必须告诉他已渲的帧在哪**，否则他会以为"什么都没出来"
-            done_note = _describe_partial_outputs(work_dir, segments_dir_hint)
+            done_note = _describe_partial_outputs(work_dir, segments_dir(work_dir))
             raise KomaFlowError(
                 ErrorKind.USER_CANCELLED,
                 detail=(f"已终止。{done_note}" if done_note else "已终止。"))
