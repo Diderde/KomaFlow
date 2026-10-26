@@ -40,17 +40,31 @@ def _log_view(copied: dict) -> None:
 
 
 def base_name(name: str) -> str:
-    """去掉能力包加的后缀，用于匹配。
+    """去掉能力包加的后缀 / Blender 的重名后缀，得到可匹配的基名。
 
-    实测能力包会把材质名改成 ``原名_mmd``（也可能有 ``_look`` / ``.001``）。
+    实测会遇到三种花样，**要能叠加**：
+
+    * ``原名_mmd`` / ``原名_look`` / ``原名_anime``（能力包改名）
+    * ``原名.001`` / ``原名.002``（Blender 重名）
+    * ``原名_mmd.001``、``原名+.001``（两种叠加）
+
+    原来只处理"其中一种"，于是 ``顏+.001`` 这种就漏掉了 ——
+    实测装配完还剩 2 个 Principled 材质（脸），它们会被补光照到，
+    跟"自发光、不受环境影响"的观感口径不一致。
     """
-    for suffix in ("_mmd", "_look", "_anime"):
-        if name.endswith(suffix):
-            return name[: -len(suffix)]
-    # Blender 的重名后缀 .001 / .002
-    if len(name) > 4 and name[-4] == "." and name[-3:].isdigit():
-        return name[:-4]
-    return name
+    base = name
+    changed = True
+    while changed:
+        changed = False
+        for suffix in ("_mmd", "_look", "_anime"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                changed = True
+        # Blender 的重名后缀 .001 / .002（最多三位数字）
+        if len(base) > 4 and base[-4] == "." and base[-3:].isdigit():
+            base = base[:-4]
+            changed = True
+    return base
 
 
 def main() -> int:

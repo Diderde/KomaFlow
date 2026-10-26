@@ -125,6 +125,13 @@ LOOK_LUT_LIGHT = _rgb("LOOK_LUT_LIGHT", (1.00, 1.00, 1.00, 1.0))
 LOOK_LUT_SHADOW = _rgb("LOOK_LUT_SHADOW", (0.52, 0.52, 0.68, 1.0))
 LOOK_LUT_STEP = _f("LOOK_LUT_STEP", "0.46") # 明暗分界位置（0~1，越小亮面越大）
 LOOK_LUT_SOFT = _f("LOOK_LUT_SOFT", "0.06") # 分界宽度（越小越硬，cel 味越重）
+# ★ 姿态无关光照（默认开，不做界面开关）
+#   把 toon 色阶的采样位置 v 从"N·L"改成常数 ⇒ 人物明暗不再随骨骼姿态/朝向变化。
+#   · LOOK=anime（默认）：启用
+#   · LOOK=mmd（严格还原）：**强制关闭**，保持逐像素等于旧版
+#   · LOOK_POSE_LOCK=0：内部回退到"跟着姿态变"（不写进用户文档）
+LOOK_POSE_LOCK = (os.environ.get("LOOK_POSE_LOCK", "1") != "0") and not IS_MMD
+LOOK_FLAT_NL = _f("LOOK_FLAT_NL", "0.55")      # 固定的 N·L 值（0~1）
 _LUT_IMG = None
 
 def _lut_image():
@@ -825,18 +832,25 @@ for si, slot in enumerate(mesh.material_slots):
     else:
         g.inputs["球面"].default_value = (0, 0, 0, 1)
 
-    # ---- 色阶 UV：u=0.5, v = N·L*0.5+0.5 ----
+    # ---- 色阶 UV：u=0.5, v = <N·L 或常数>*0.5+0.5 ----
+    #   ★ 默认（LOOK=anime）v 取常数 LOOK_FLAT_NL ⇒ **姿态无关**：
+    #     低头/转身只改轮廓与位置，不改明暗分布（MMD 的观感口径）。
+    #   ★ LOOK=mmd 或 LOOK_POSE_LOCK=0 ⇒ 仍走 N·L（原行为，逐像素不变）。
+    #   ⚠ geo 节点下面「球面 UV」还要用，必须始终创建。
     geo = nt.nodes.new("ShaderNodeNewGeometry")
-    ld = nt.nodes.new("ShaderNodeCombineXYZ")
-    for i in range(3):
-        ld.inputs[i].default_value = LIGHT_DIR[i]
-    dot = nt.nodes.new("ShaderNodeVectorMath"); dot.operation = "DOT_PRODUCT"
-    nt.links.new(geo.outputs["Normal"], dot.inputs[0])
-    nt.links.new(ld.outputs[0], dot.inputs[1])
     half = nt.nodes.new("ShaderNodeMath"); half.operation = "MULTIPLY_ADD"
     half.inputs[1].default_value = 0.5
     half.inputs[2].default_value = 0.5
-    nt.links.new(dot.outputs["Value"], half.inputs[0])
+    if LOOK_POSE_LOCK:
+        half.inputs[0].default_value = LOOK_FLAT_NL
+    else:
+        ld = nt.nodes.new("ShaderNodeCombineXYZ")
+        for i in range(3):
+            ld.inputs[i].default_value = LIGHT_DIR[i]
+        dot = nt.nodes.new("ShaderNodeVectorMath"); dot.operation = "DOT_PRODUCT"
+        nt.links.new(geo.outputs["Normal"], dot.inputs[0])
+        nt.links.new(ld.outputs[0], dot.inputs[1])
+        nt.links.new(dot.outputs["Value"], half.inputs[0])
     cuv = nt.nodes.new("ShaderNodeCombineXYZ"); cuv.name = "色阶UV"
     cuv.inputs[0].default_value = 0.5
     nt.links.new(half.outputs[0], cuv.inputs[1])

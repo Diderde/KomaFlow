@@ -300,5 +300,30 @@ class TestLookAlwaysApplied(unittest.TestCase):
         self.assertIn('scene.view_settings.look = "None"', text)
 
 
+class TestLookCoversDuplicateMaterials(unittest.TestCase):
+    """观感迁移要覆盖 Blender 的重名材质（含叠加后缀）。
+
+    用户问：「能力包的自发光呢？就是不随周围环境光照影响」
+    实测：`顏+.001` / `顏+.002`（脸的副本）没被替换，仍是 Principled ——
+    它们会被补光照到，与"自发光、环境无关"的口径不一致。
+    """
+
+    def test_base_name_strips_stacked_suffixes(self):
+        import importlib.util
+        from pathlib import Path as P
+
+        path = ROOT / "src/komaflow/adapters/scripts/apply_look.py"
+        spec = importlib.util.spec_from_file_location("apply_look_mod", path)
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001 - 这个脚本要 bpy，导入会失败
+            self.skipTest("apply_look 依赖 bpy，跳过")
+        base = module.base_name
+        self.assertEqual(base("顏+.001"), "顏+")
+        self.assertEqual(base("肌_mmd.001"), "肌")
+        self.assertEqual(base("衣1_look"), "衣1")
+
+
 if __name__ == "__main__":
     unittest.main()
