@@ -176,6 +176,14 @@ def render_model(pmx, outdir, name=None, *, shots=("front", "side", "back"),
         pass
 
     env = dict(os.environ)
+    # ★ 默认**不要明暗/阴影**：人物只出贴图本色。
+    #
+    # 用户口径：「阴影都不需要」「动作不该让人物明暗变化」。
+    # 能力包的 LOOK_SHADE 是"全局明暗乘数"，LOOK_AO 是接触阴影；
+    # 两个都归零 ⇒ 赛璐璐色阶不参与，人物就是干净的平色（描边/球面仍保留）。
+    # 想恢复能力包原来的观感：设环境变量 LOOK_SHADE=1 / LOOK_AO=0.12 即可。
+    env.setdefault("LOOK_SHADE", "0")
+    env.setdefault("LOOK_AO", "0")
     env.update({
         "SHOTS": ",".join(views),
         "ORTHO": "1" if ortho else "0",
