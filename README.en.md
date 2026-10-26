@@ -4,14 +4,14 @@
 >
 > Do not use the green `Code → Download ZIP` button — that is the **source code**
 > and contains no executable. The app is the asset on the **Releases** page
-> (`KomaFlow_V1.1.1.zip`, 12.20 MB).
+> (`KomaFlow_V1.1.8.zip`, 12.30 MB).
 
 
 Turn MMD models (`.pmx`) and motions (`.vmd`) into a finished video — by driving
 the **Blender you already have installed**. The app assembles the scene, builds
 and bakes physics, renders in segments, then muxes the result with FFmpeg.
 
-Windows desktop app (not a Blender add-on). **V1.1.1**.
+Windows desktop app (not a Blender add-on). **V1.1.8**.
 
 > 中文说明见 [README.md](README.md)。界面默认中文，可安装
 > `language-pack-en` 切换为英文（见 [English-UI-Guide](#english-ui)）。
@@ -40,7 +40,7 @@ Windows desktop app (not a Blender add-on). **V1.1.1**.
 
 **Release build**
 
-1. Download `KomaFlow_V1.1.1.zip` from Releases and extract it
+1. Download `KomaFlow_V1.1.8.zip` from Releases and extract it
 2. Run `KomaFlow.exe`
 3. Drop a `.pmx` into Character, a `.vmd` into Motion, click Start Render
 
@@ -58,6 +58,7 @@ Read `User-Guide-EN.txt` (inside the release package) for the full walkthrough.
   so no GPL code is distributed here.
 - **No assets are bundled** — no models, motions, textures or footage.
 - **Zero runtime dependencies** — standard library + Tk only.
+- **Stable look** — the character renders in flat material colour (no cast shadows, no darkening as it moves)
 - **The project is reusable** — assembly saves `<name>.blend` next to your output,
   with physics already baked. Re-render, change the range, or edit it in Blender
   and render again without re-baking.
@@ -93,7 +94,7 @@ python -m unittest discover -s tests -t .
 The interface is Chinese by default. An optional English language pack ships in
 the release package:
 
-1. Download/extract `KomaFlow_V1.1.1.zip`
+1. Download/extract `KomaFlow_V1.1.8.zip`
 2. Copy `language-pack-en/locales` next to `KomaFlow.exe`
 3. Restart — the UI is English
 

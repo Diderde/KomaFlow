@@ -6,7 +6,7 @@
 > **直接下载（Windows 程序包）** → <https://github.com/YLKoKi/KomaFlow/releases/latest>
 >
 > ⚠️ 请不要用绿色的 `Code → Download ZIP`：那是**源码**，里面没有 exe。
-> 程序包在 **Releases** 页面的 Assets 里（`KomaFlow_V1.1.1.zip`，12.20 MB）。
+> 程序包在 **Releases** 页面的 Assets 里（`KomaFlow_V1.1.8.zip`，12.30 MB）。
 
 
 > English: [README.en.md](README.en.md)
@@ -14,7 +14,7 @@
 把 MMD 的**模型（.pmx）**和**动作（.vmd）**拖进来，调用你电脑上已装的 Blender
 完成「装配 → 物理预热 → 分段渲染 → 合并出片」，输出 MP4 或带透明通道的 MOV。
 
-Windows 独立程序（不是 Blender 插件）。**V1.1.1**。
+Windows 独立程序（不是 Blender 插件）。**V1.1.8**。
 
 ---
 
@@ -42,7 +42,7 @@ Windows 独立程序（不是 Blender 插件）。**V1.1.1**。
 
 **方式一：发行包**
 
-1. 下载 Release 里的 `KomaFlow_V1.1.1.zip` 并解压
+1. 下载 Release 里的 `KomaFlow_V1.1.8.zip` 并解压
 2. 双击 `KomaFlow.exe`
 3. 拖入 `.pmx` → 拖入 `.vmd` → 点「开始渲染」
 
@@ -58,6 +58,7 @@ python run.py
   不分发、不链接，因此仓库里不含 GPL 代码。
 - **不内置任何素材**：仓库里没有模型、动作、贴图、成片。
 - **零运行时依赖**：只用 Python 标准库 + Tk。
+- **观感稳定**：人物按材质本色渲染（默认不出阴影、不随动作变暗），不会因为低头/转身出现明暗漂移
 - **工程可交付**：装配完成会在出图目录留一份 `.blend`（含烘焙好的物理；
   **贴图仍是指向模型目录的外链** —— 换机器打开时请一并带上模型与贴图目录），
   可以直接用 Blender 打开改材质 / 灯光 / 镜头，再回来渲。
